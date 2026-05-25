@@ -1,0 +1,23 @@
+{
+  "name": "mongi-usage-coach",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Personal Discord usage coach for Codex and Claude.",
+  "main": "src/monitor.js",
+  "scripts": {
+    "test:discord": "node scripts/test-discord.js",
+    "test:state": "node scripts/test-state.js",
+    "login": "node scripts/login.js",
+    "debug:page-text": "node scripts/debug-page-text.js",
+    "debug:codex": "node scripts/debug-page-text.js codex",
+    "debug:claude": "node scripts/debug-page-text.js claude",
+    "monitor": "node src/monitor.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "playwright": "^1.60.0"
+  }
+}
