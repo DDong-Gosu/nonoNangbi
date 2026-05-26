@@ -622,282 +622,332 @@ Agent가 하면 안 되는 것:
 
 ## 13. Phase 계획
 
-## Phase-a — Local core monitoring foundation
+## Phase-a — Core local monitor engine
 
 목표:
 
-Mac local에서 Codex/Claude usage page에 접근하고, 사용량 정보를 파싱하거나 파싱 실패를 명확히 진단하며, state 기반 이벤트 판단과 Discord 알림까지 완성한다.
+Mac local 환경에서 Codex/Claude usage page를 읽고, 사용량 의미를 정규화한 뒤, 이벤트를 판단해 Discord로 몽이 알림을 보내는 핵심 엔진을 완성한다.
 
-Phase-a는 제품의 심장부다.  
-이 단계가 성공하면 수동 실행 기준으로 이미 쓸 수 있어야 한다.
+Phase-a는 Mongi Usage Coach의 심장부다.  
+이 단계가 끝나면 사용자는 수동으로 CDP Chrome을 켜고 `npm run monitor`를 실행해 실제 usage coaching을 받을 수 있어야 한다.
 
 ### Phase-a-01 — Project foundation + Discord notification + state engine
 
 목표:
 
-프로젝트 기본 구조, 환경변수, 로그, state 저장소, Discord Webhook 전송을 완성한다.
+프로젝트 기본 구조, 환경변수, 로그, state 저장소, Discord Webhook 전송 기반을 만든다.
 
-포함 작업:
+완료 기준:
 
-- Node.js 프로젝트 초기화
-- src 디렉토리 구조 생성
-- .env.example 작성
-- .gitignore 작성
-- config 로더 작성
-- logger 작성
-- stateStore 작성
-- Discord Webhook client 작성
-- test-discord script 작성
-- 기본 메시지 템플릿 구조 작성
-- README 초안 작성
+- `.env.example` 존재
+- `.gitignore`가 민감 파일 보호
+- `data/state.json` 생성/읽기/쓰기 가능
+- Discord Webhook smoke test 가능
+- Playwright는 아직 설치하지 않음
 
-성공 기준:
+상태:
 
-- npm script로 Discord 테스트 메시지를 보낼 수 있다.
-- state.json이 없으면 자동 생성된다.
-- state read/write가 안정적으로 동작한다.
-- .env 누락 시 명확한 에러를 출력한다.
-- 민감 파일이 gitignore에 포함된다.
+완료.
 
-### Phase-a-02 — Playwright login/session + usage extraction strategy
+### Phase-a-02 — Playwright extraction + CDP browser connection
 
 목표:
 
-Playwright로 Codex/Claude usage page에 접근하고, 실제 페이지에서 사용량 정보를 추출할 수 있는 최선의 방법을 찾는다.
+Codex/Claude usage page에 접근하고 사용량 정보를 추출한다.
 
-포함 작업:
+초기에는 Playwright persistent browser를 시도했지만 Cloudflare Turnstile에 막혔다.  
+따라서 정상 Chrome을 사용자가 직접 CDP 모드로 실행하고, 앱은 해당 Chrome에 연결해 페이지를 읽는 방식으로 수정했다.
 
-- scripts/login.js 작성
-- browser-profile 기반 persistent context 구성
-- Codex usage page 접근
-- Claude usage page 접근
-- debug-page-text script 작성
-- innerText 추출 시도
-- 퍼센트/라벨 기반 파싱 시도
-- DOM selector 탐색
-- accessibility snapshot 또는 대체 전략 검토
-- 서비스별 parser 파일 생성
-- parse confidence 모델 도입
-- 파싱 실패 시 rawTextSample과 diagnostic 로그 남김
+완료 기준:
 
-Agent 판단권:
+- Playwright 설치
+- Chrome CDP 연결 성공
+- Codex/Claude usage page extraction 성공
+- service-specific parser 구현
+- diagnostic artifacts 생성
+- parser 실패 시 명확한 로그 생성
+- 한 서비스 실패가 전체 monitor를 중단하지 않음
 
-- innerText로 충분히 잡히면 그 방식 우선
-- innerText가 불충분하면 selector 기반으로 전환
-- selector도 불안정하면 accessibility snapshot 시도
-- headless 모드에서 실패하면 headless false로 비교
-- 한 서비스가 실패해도 다른 서비스는 계속 진행
-- 정확한 파싱이 불가능한 경우 degraded mode로 처리하고 명확히 보고
+상태:
 
-성공 기준:
+완료.
 
-- Codex 또는 Claude 중 최소 하나는 실제 percent 추출에 성공한다.
-- 실패한 서비스는 왜 실패했는지 로그로 확인 가능하다.
-- monitor에서 서비스별 parse result를 표준 객체로 받을 수 있다.
-- parser는 서비스별로 분리되어 있다.
-
-### Phase-a-03 — Event detection + Mongi random notification system
+### Phase-a-03 — Usage normalization + event detection + Mongi notification engine
 
 목표:
 
-이전 사용량과 현재 사용량을 비교해 회복/사용 중/사용 종료/weekly idle 이벤트를 판단하고, 몽이 캐릭터 메시지를 Discord로 보낸다.
+Codex/Claude의 서로 다른 percent 의미를 `remainingPercent` 기준으로 통일하고, usage 변화에 따라 알림 이벤트를 판단한다.
 
-포함 작업:
+포함 내용:
 
-- event detection 로직 작성
-- recoveredShort 이벤트
-- recoveredWeekly 이벤트
-- sessionStopped 이벤트
-- weeklyIdle 이벤트
-- quiet hours 처리
-- 중복 알림 방지
-- messages.js 확장
-- 상황별 랜덤 메시지 선택
-- 변수 interpolation
-- suggestedAction 생성
-- parse failure digest 최소 구현
-- monitor.js 통합
+- Codex/Claude percent semantic normalization
+- `remainingShortWindowPercent`
+- `remainingWeeklyPercent`
+- recovered short event
+- recovered weekly event
+- usage active silent detection
+- session stopped summary
+- weekly idle reminder
+- diagnostic digest
+- quiet hours
+- duplicate prevention
+- Mongi random message templates
+- scenario tests
 
-성공 기준:
+완료 기준:
 
-- state.json을 조작하거나 mock parser를 사용해 모든 이벤트를 테스트할 수 있다.
-- 100% 회복 이벤트가 중복 발송되지 않는다.
-- 20분 무변화 조건에서 sessionStopped가 1회만 발송된다.
-- weekly 100% 방치 알림이 설정된 간격으로만 발송된다.
-- 메시지에 몽이 캐릭터성이 반영된다.
-- 사용 중 상태에서는 알림이 발송되지 않는다.
+- Claude `0% used`가 remaining 100으로 해석됨
+- Codex/Claude 모두 canonical remaining field 보유
+- event detection은 remaining field만 사용
+- `npm run test:scenarios` 통과
+- `npm run monitor`가 실제 CDP extraction 결과로 state 업데이트
+- Discord notification system이 작동
+- usage_active는 알림을 보내지 않음
+
+상태:
+
+완료.
 
 ---
 
-## Phase-b — Local automation + reliability hardening
+## Phase-b — Local automation + one-click CDP Chrome starter
 
 목표:
 
-수동 실행으로만 동작하던 monitor를 Mac launchd로 자동 실행하고, 장시간 로컬 운영에서 깨지지 않도록 안정화한다.
+수동 실행해야 하던 CDP Chrome과 monitor 실행을 Mac에서 쉽게 시작하고, monitor를 주기적으로 자동 실행되게 만든다.
 
-Phase-b가 끝나면 사용자는 Mac을 켰을 때 별도 조작 없이 usage monitor를 사용할 수 있어야 한다.
+Phase-b의 목표는 “완전 서버 자동화”가 아니다.  
+목표는 사용자가 Mac을 켰을 때 버튼 하나로 Mongi 실행 환경을 열고, 이후 monitor가 주기적으로 돌아가게 하는 것이다.
 
-### Phase-b-01 — Mac launchd automation
+### Phase-b-01 — One-click CDP Chrome starter
 
 목표:
 
-Mac에서 10분마다 monitor가 자동 실행되도록 launchd 설정을 제공한다.
+사용자가 긴 터미널 명령어를 매번 입력하지 않도록, CDP Chrome을 버튼처럼 실행할 수 있는 entrypoint를 만든다.
+
+현재 수동 명령:
+
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --remote-debugging-port=9222 \
+  --user-data-dir="$HOME/.mongi-chrome-profile"
+
+구현 후보:
+
+1. `scripts/start-cdp-chrome.sh`
+2. `Mongi Start.command`
+3. macOS Automator app
+4. macOS Shortcuts app
+
+v1 추천:
+
+- 먼저 `.command` 파일 또는 shell script로 구현
+- 이후 필요하면 Automator/Shortcuts로 감싸기
+
+포함 작업:
+
+- CDP Chrome 실행 script 작성
+- 이미 9222 포트가 열려 있으면 중복 실행하지 않음
+- Chrome이 이미 실행 중인지 확인
+- Codex/Claude usage page를 자동으로 열기
+- 실행 방법 README 문서화
+
+완료 기준:
+
+- 사용자가 더블클릭 또는 짧은 npm script로 CDP Chrome을 열 수 있다.
+- Chrome이 이미 열려 있으면 중복 실행을 피한다.
+- `curl http://127.0.0.1:9222/json/version`으로 CDP 상태를 확인할 수 있다.
+
+### Phase-b-02 — launchd monitor automation
+
+목표:
+
+Mac에서 monitor가 주기적으로 자동 실행되게 한다.
 
 포함 작업:
 
 - launchd plist example 작성
-- install-launchd.sh 작성
-- uninstall-launchd.sh 작성
-- logs directory 자동 생성
-- which node 기반 경로 안내
-- WorkingDirectory 설정
-- stdout/stderr 로그 분리
-- launchctl load/unload 문서화
+- install script 작성
+- uninstall script 작성
+- 10분마다 `npm run monitor` 실행
+- stdout/stderr 로그 저장
+- launchd 상태 확인 명령 문서화
+- monitor 실행 실패 시 로그 확인 가능
 
-성공 기준:
+완료 기준:
 
 - launchd 등록 후 10분마다 monitor가 실행된다.
-- 로그 파일에서 실행 기록을 확인할 수 있다.
-- launchd 중지/재등록 방법이 README에 있다.
+- Mac이 켜져 있고 로그인된 상태에서 자동 감시가 작동한다.
+- Chrome CDP가 꺼져 있으면 diagnostic이 rate-limited로 처리된다.
+- logs에서 실행 기록을 확인할 수 있다.
 
-### Phase-b-02 — Reliability, diagnostics, and failure containment
-
-목표:
-
-Playwright 실패, 로그인 만료, 네트워크 오류, 파싱 실패가 발생해도 전체 시스템이 망가지지 않도록 한다.
-
-포함 작업:
-
-- service-level try/catch
-- timeout 설정
-- consecutiveParseFailures 카운트
-- login expired 의심 상태 감지
-- diagnostic summary 로그
-- parse failure digest 알림 제한
-- 전체 monitor run 실패 시 graceful exit
-- state corruption 방지
-- state backup 또는 atomic write 적용
-
-Agent 판단권:
-
-- 반복 실패가 있으면 로그를 분석해 원인을 분류
-- 로그인 만료로 보이면 사용자에게 재로그인 필요 메시지 출력
-- 페이지 구조 변경으로 보이면 parser diagnostic 출력
-- 한 서비스가 실패해도 다른 서비스 알림은 유지
-
-성공 기준:
-
-- 하나의 서비스 파싱 실패가 전체 monitor를 중단시키지 않는다.
-- state.json이 깨지면 복구 또는 재생성된다.
-- 로그인 만료 의심 시 명확히 알 수 있다.
-- 동일한 실패 알림이 과도하게 반복되지 않는다.
-
-### Phase-b-03 — Local validation scenarios
+### Phase-b-03 — Local automation validation
 
 목표:
 
-실제 사용량 변화가 없더라도 mock/state manipulation으로 주요 시나리오를 검증할 수 있게 한다.
+one-click starter와 launchd monitor가 실제 생활 환경에서 쓸 수 있는지 검증한다.
 
 포함 작업:
 
-- mock parser mode
-- scenario runner script
-- recovered scenario
-- using scenario
-- session stopped scenario
-- weekly idle scenario
-- quiet hours scenario
-- parse failure scenario
-- 테스트 결과 문서화
+- CDP Chrome 켜짐/꺼짐 시나리오 검증
+- monitor 반복 실행 검증
+- Discord 스팸 여부 확인
+- quiet hours 동작 확인
+- Chrome 재시작 후 로그인 세션 유지 확인
+- README troubleshooting 보강
 
-성공 기준:
+완료 기준:
 
-- 실제 Codex/Claude 사용량을 기다리지 않아도 이벤트 로직을 검증할 수 있다.
-- 각 시나리오에서 예상 알림/무알림이 맞는지 확인 가능하다.
-- Agent가 작업 완료 시 어떤 검증을 했는지 명확히 보고할 수 있다.
+- 사용자가 Mac을 켜고 “몽이 시작”만 누르면 사용 준비가 된다.
+- 이후 monitor는 자동으로 주기 실행된다.
+- 실패해도 원인을 로그에서 확인할 수 있다.
 
 ---
 
-## Phase-c — Always-on free operation path
+## Phase-c — Reliability hardening + real-world usage validation
 
 목표:
 
-Mac이 꺼져 있어도 가능한 무료 상시 운영 경로를 검토하고, 가장 현실적인 무료 운영 방식을 선택해 이전 가능성을 확보한다.
+실제 1~2주 사용하면서 알림 정책, 메시지 빈도, state 안정성, CDP 연결 안정성을 검증하고 다듬는다.
 
-Phase-c는 필수 production path이지만, v1 초기 사용은 Mac local로 시작할 수 있다.
+Phase-c는 기능 추가보다 “진짜 내 생활에 도움이 되는가”를 확인하는 단계다.
 
-### Phase-c-01 — Free always-on environment evaluation
+### Phase-c-01 — Real usage observation
 
 목표:
 
-무료로 24시간 실행 가능한 후보를 비교하고, 이 프로젝트에 맞는지 검증한다.
+실제 개발 세션에서 Mongi가 적절한 타이밍에 알림을 보내는지 확인한다.
+
+관찰 항목:
+
+- recovered alert가 너무 늦거나 빠르지 않은가
+- session stopped 기준 20분이 적절한가
+- weekly idle reminder가 도움이 되는가, 짜증나는가
+- quiet hours 설정이 맞는가
+- Codex/Claude parser가 계속 안정적인가
+- Discord 알림 문구가 행동으로 이어지는가
+
+완료 기준:
+
+- 최소 3~5일 이상 실제 사용
+- 알림 과다/부족 여부 기록
+- 수정할 정책 리스트 작성
+
+### Phase-c-02 — Policy tuning + message refinement
+
+목표:
+
+실제 사용 결과를 바탕으로 알림 정책과 몽이 메시지를 조정한다.
+
+포함 작업:
+
+- idle threshold 조정 가능성
+- weekly idle reminder interval 조정
+- quiet hours 조정
+- 메시지 템플릿 추가/삭제
+- 너무 강한 메시지 완화
+- 너무 약한 메시지 강화
+- recommended action 다양화
+
+완료 기준:
+
+- 메시지가 스팸처럼 느껴지지 않는다.
+- 알림이 실제 개발 행동으로 이어진다.
+- 사용자는 Codex/Claude 구독 사용 상태를 더 잘 인식한다.
+
+### Phase-c-03 — Subscription value review
+
+목표:
+
+Mongi가 실제로 월 6만원 구독료를 정당화하는지 판단할 수 있는 월간 리뷰 기준을 만든다.
+
+포함 작업:
+
+- 주간 최소 사용 기준 정의
+- 주간 최소 산출물 기준 정의
+- Codex/Claude 역할 분리
+- 구독 유지/해지 판단 기준 작성
+- README 또는 docs에 monthly review template 추가
+
+완료 기준:
+
+- 사용자는 매달 Codex/Claude를 계속 결제할지 판단할 근거를 가진다.
+- “돈을 냈으니 써야지”를 넘어서 “산출물로 바뀌었는지”를 평가할 수 있다.
+
+---
+
+## Phase-d — Optional packaging / Chrome Extension research
+
+목표:
+
+Mongi Usage Coach를 더 편하게 쓰기 위한 포장 방식을 검토한다.
+
+Phase-d는 v1 필수는 아니다.  
+Phase-a~c가 실제로 유용하다고 판단된 뒤 진행한다.
+
+### Phase-d-01 — macOS lightweight packaging
+
+목표:
+
+Mongi를 더 앱처럼 실행할 수 있게 포장한다.
 
 후보:
 
-- Oracle Cloud Free Tier VPS
-- GitHub Actions scheduled workflow
-- Render/Fly/Railway free tier 가능성
-- 기타 무료 VM
+- `.command` 파일 개선
+- Automator app
+- Shortcuts app
+- 작은 menu bar app
+- Electron/Tauri는 v1에서는 과함
 
-평가 기준:
+완료 기준:
 
-- 무료 여부
-- Playwright 실행 가능 여부
-- persistent browser profile 유지 가능 여부
-- 로그인 세션 유지 가능 여부
-- cron 실행 가능 여부
-- 운영 복잡도
-- 계정 정지/휴면 리스크
-- 보안 리스크
+- 사용자가 터미널을 거의 열지 않고 Mongi를 시작할 수 있다.
 
-성공 기준:
-
-- 최소 2개 후보의 실제 가능성을 검토한다.
-- 최종 추천 운영 경로를 하나 선택한다.
-- 왜 GitHub Actions 또는 특정 플랫폼이 부적합한지 근거를 남긴다.
-
-### Phase-c-02 — VPS/Linux cron migration readiness
+### Phase-d-02 — Chrome Extension prototype research
 
 목표:
 
-Mac local 프로젝트를 Linux 서버로 옮길 수 있게 준비한다.
+CDP 방식 대신 Chrome Extension으로 usage page를 읽는 구조가 실용적인지 검토한다.
 
-포함 작업:
+검토 항목:
 
-- Linux setup guide 작성
-- Node.js 설치 가이드
-- Playwright dependency 설치 가이드
-- .env 설정 가이드
-- browser-profile 이전 또는 서버 내 재로그인 전략
-- cron 등록 예시
-- logs 위치 정리
-- headless/headful 차이 문서화
+- Manifest V3 구조
+- background service worker lifecycle
+- content script DOM access
+- usage page 탭 필요 여부
+- chrome.storage 기반 state 저장
+- Discord Webhook 보관 방식
+- 기존 parser/event/message 코드 재사용 가능성
 
-성공 기준:
+완료 기준:
 
-- README만 보고 Linux 서버에서 실행 준비가 가능하다.
-- cron으로 monitor를 실행할 수 있는 명령이 있다.
-- 서버에서 로그인 세션을 만드는 방법이 문서화되어 있다.
+- Extension으로 전환할 가치가 있는지 판단한다.
+- 실제 prototype을 만들지 여부를 결정한다.
 
-### Phase-c-03 — Operational policy and cost review
+### Phase-d-03 — Always-on environment review
 
 목표:
 
-이 도구가 실제로 구독료 절약/활용률 개선에 기여하는지 판단할 기준을 만든다.
+Mac이 꺼져 있어도 작동하는 구조가 필요한지 재검토한다.
 
-포함 작업:
+후보:
 
-- 월 6만원 구독 유지 판단 기준 작성
-- 주간 최소 산출물 기준 정의
-- Codex/Claude 각각의 사용 목적 분리
-- weekly usage 100% 방치 빈도 기록 방법
-- 월말 리뷰 템플릿 작성
-- “둘 중 하나 해지해야 하는 조건” 정의
+- 미니PC
+- Raspberry Pi
+- Oracle Cloud Free Tier
+- VPS
+- GitHub Actions
 
-성공 기준:
+판단 기준:
 
-- 사용자는 이 도구를 통해 단순히 알림을 받는 것이 아니라, 구독 유지 여부를 판단할 수 있다.
-- 월말에 Codex/Claude가 실제 산출물로 이어졌는지 점검할 수 있다.
+- 추가 비용
+- Cloudflare/로그인 안정성
+- Chrome 세션 유지 가능성
+- 실제 필요성
+
+완료 기준:
+
+- 상시 운영이 진짜 필요한지 판단한다.
+- 필요하다면 가장 현실적인 운영 환경을 선택한다.
 
 ---
 

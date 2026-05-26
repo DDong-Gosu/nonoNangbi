@@ -7,10 +7,22 @@
   "scripts": {
     "test:discord": "node scripts/test-discord.js",
     "test:state": "node scripts/test-state.js",
+    "test:scenarios": "node scripts/test-scenarios.js",
     "login": "node scripts/login.js",
+    "start:chrome": "bash scripts/start-cdp-chrome.sh",
+    "check:cdp": "node scripts/check-cdp-status.js",
+    "launchd:install": "bash scripts/install-launchd.sh",
+    "launchd:uninstall": "bash scripts/uninstall-launchd.sh",
+    "launchd:status": "bash scripts/check-launchd-status.sh",
+    "launchd:logs": "tail -n 100 -f logs/launchd-out.log logs/launchd-error.log",
+    "monitor:run": "bash scripts/run-monitor.sh",
+    "health": "node scripts/health-check.js",
+    "logs:summary": "node scripts/summarize-launchd-logs.js",
+    "verify:local": "bash scripts/verify-local-automation.sh",
     "debug:page-text": "node scripts/debug-page-text.js",
     "debug:codex": "node scripts/debug-page-text.js codex",
     "debug:claude": "node scripts/debug-page-text.js claude",
+    "chrome:command": "node scripts/print-chrome-command.js",
     "monitor": "node src/monitor.js"
   },
   "engines": {

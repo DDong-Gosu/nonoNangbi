@@ -4,6 +4,7 @@ const PERCENT_REGEX = /(?:100|[1-9]?\d)(?:\.\d+)?\s*%/g;
 const LOGIN_URL_REGEX = /login|signin|sign-in|auth|oauth|account\/login/i;
 const LOGIN_TEXT_REGEX = /sign in|log in|login|continue with|authenticate|authentication|verify your email|로그인|인증|계정에 로그인/i;
 const USAGE_TEXT_REGEX = /usage|limit|remaining|reset|week|weekly|hour|hours|5h|사용량|사용|한도|남음|재설정|주간|시간/i;
+const TURNSTILE_TEXT_REGEX = /cloudflare|turnstile|verify you are human|checking if the site connection is secure|사람인지 확인하십시오|사람인지 확인하세요|보안 확인 수행 중/i;
 
 function normalizeWhitespace(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
@@ -23,6 +24,22 @@ function percentTokenToNumber(token) {
   }
 
   return value;
+}
+
+function remainingFromRaw(rawPercent, meaning) {
+  if (rawPercent === null || rawPercent === undefined) {
+    return null;
+  }
+
+  if (meaning === "remaining") {
+    return rawPercent;
+  }
+
+  if (meaning === "used") {
+    return 100 - rawPercent;
+  }
+
+  return null;
 }
 
 function extractPercentTokens(text) {
@@ -58,6 +75,14 @@ function classifyLoginState(finalUrl, bodyText) {
   };
 }
 
+function classifyTurnstileState(finalUrl, text) {
+  const source = `${finalUrl || ""}\n${text || ""}`;
+
+  return {
+    turnstileLikely: TURNSTILE_TEXT_REGEX.test(source)
+  };
+}
+
 function makeParseResult(extraction, overrides = {}) {
   return {
     serviceKey: extraction.serviceKey,
@@ -65,6 +90,12 @@ function makeParseResult(extraction, overrides = {}) {
     ok: false,
     shortWindowPercent: null,
     weeklyPercent: null,
+    rawShortWindowPercent: null,
+    rawWeeklyPercent: null,
+    rawShortWindowMeaning: "unknown",
+    rawWeeklyPercentMeaning: "unknown",
+    remainingShortWindowPercent: null,
+    remainingWeeklyPercent: null,
     parseMethod: "none",
     parseConfidence: "none",
     rawTextSample: createRawTextSample(extraction.bodyText),
@@ -121,9 +152,13 @@ function findPercentCandidates(extraction, options = {}) {
 }
 
 function scoreCandidate(candidate, keywords) {
-  const context = normalizeWhitespace(`${candidate.line} ${candidate.context}`).toLowerCase();
+  const line = normalizeWhitespace(candidate.line).toLowerCase();
+  const context = normalizeWhitespace(candidate.context).toLowerCase();
   return keywords.reduce((score, keyword) => {
-    return context.includes(keyword.toLowerCase()) ? score + 1 : score;
+    const normalizedKeyword = keyword.toLowerCase();
+    const lineScore = line.includes(normalizedKeyword) ? 2 : 0;
+    const contextScore = context.includes(normalizedKeyword) ? 1 : 0;
+    return score + lineScore + contextScore;
   }, 0);
 }
 
@@ -140,6 +175,10 @@ function pickBestPercent(candidates, keywords) {
 }
 
 function inferErrorReason(extraction, percentCandidates) {
+  if (extraction.turnstileState && extraction.turnstileState.turnstileLikely) {
+    return "turnstile_verification_required";
+  }
+
   if (extraction.error && extraction.error.reason === "page_timeout") {
     return "page_timeout";
   }
@@ -161,6 +200,7 @@ function inferErrorReason(extraction, percentCandidates) {
 
 module.exports = {
   classifyLoginState,
+  classifyTurnstileState,
   createRawTextSample,
   extractCandidateLines,
   extractPercentTokens,
@@ -171,5 +211,6 @@ module.exports = {
   normalizeWhitespace,
   percentTokenToNumber,
   pickBestPercent,
+  remainingFromRaw,
   scoreCandidate
 };

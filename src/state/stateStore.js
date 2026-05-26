@@ -12,6 +12,14 @@ function createServiceState() {
     weeklyPercent: null,
     lastShortWindowPercent: null,
     lastWeeklyPercent: null,
+    rawShortWindowPercent: null,
+    rawWeeklyPercent: null,
+    rawShortWindowMeaning: "unknown",
+    rawWeeklyPercentMeaning: "unknown",
+    remainingShortWindowPercent: null,
+    remainingWeeklyPercent: null,
+    lastRemainingShortWindowPercent: null,
+    lastRemainingWeeklyPercent: null,
     lastCheckedAt: null,
     lastChangedAt: null,
     sessionSummarySent: false,
@@ -19,7 +27,8 @@ function createServiceState() {
     lastWeeklyRecoveredAt: null,
     lastWeeklyFullReminderAt: null,
     consecutiveParseFailures: 0,
-    lastParseFailureAt: null
+    lastParseFailureAt: null,
+    lastParseFailureDigestAt: null
   };
 }
 
@@ -58,24 +67,56 @@ function backupCorruptState(stateFilePath) {
 
 function normalizeState(state) {
   const defaultState = createDefaultState();
+  const codex = normalizeServiceState(state.services && state.services.codex, defaultState.services.codex);
+  const claude = normalizeServiceState(state.services && state.services.claude, defaultState.services.claude);
   const normalized = {
     ...defaultState,
     ...state,
     version: state.version || defaultState.version,
     services: {
-      codex: {
-        ...defaultState.services.codex,
-        ...(state.services && state.services.codex ? state.services.codex : {})
-      },
-      claude: {
-        ...defaultState.services.claude,
-        ...(state.services && state.services.claude ? state.services.claude : {})
-      }
+      codex,
+      claude
     },
     meta: state.meta && typeof state.meta === "object" && !Array.isArray(state.meta) ? state.meta : {}
   };
 
+  normalized.meta.lastCdpUnreachableDigestAt = normalized.meta.lastCdpUnreachableDigestAt || null;
+
   return normalized;
+}
+
+function normalizeMeaning(value) {
+  return ["remaining", "used", "unknown"].includes(value) ? value : "unknown";
+}
+
+function normalizeServiceState(serviceState, defaultServiceState) {
+  const service = {
+    ...defaultServiceState,
+    ...(serviceState || {})
+  };
+
+  service.rawShortWindowMeaning = normalizeMeaning(service.rawShortWindowMeaning);
+  service.rawWeeklyPercentMeaning = normalizeMeaning(service.rawWeeklyPercentMeaning);
+
+  if (service.rawShortWindowPercent === null && service.shortWindowPercent !== null) {
+    service.rawShortWindowPercent = service.shortWindowPercent;
+    service.rawShortWindowMeaning = "unknown";
+  }
+
+  if (service.rawWeeklyPercent === null && service.weeklyPercent !== null) {
+    service.rawWeeklyPercent = service.weeklyPercent;
+    service.rawWeeklyPercentMeaning = "unknown";
+  }
+
+  if (service.lastRemainingShortWindowPercent === undefined) {
+    service.lastRemainingShortWindowPercent = null;
+  }
+
+  if (service.lastRemainingWeeklyPercent === undefined) {
+    service.lastRemainingWeeklyPercent = null;
+  }
+
+  return service;
 }
 
 function loadState(config) {

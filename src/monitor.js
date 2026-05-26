@@ -1,57 +1,25 @@
-const path = require("path");
-const { chromium } = require("playwright");
-
 const { loadConfig } = require("./config");
 const logger = require("./utils/logger");
 const { nowIso } = require("./utils/time");
 const { loadState, saveState } = require("./state/stateStore");
+const { applyInternalEventState, updateServiceState } = require("./state/serviceStateUpdater");
 const { createServices } = require("./services");
 const { extractUsagePage } = require("./extractors/usageExtractor");
+const { closeBrowserResources, getBrowserContext } = require("./browser/browserContext");
+const { detectCdpUnreachableEvent, detectEvents } = require("./events/eventDetector");
+const { applyNotificationPatches, dispatchNotifications } = require("./notifications/notificationDispatcher");
 
-const BROWSER_PROFILE_PATH = path.resolve("browser-profile");
-
-function updateServiceState(state, parseResult) {
-  const current = state.services[parseResult.serviceKey];
-  const checkedAt = nowIso();
-
-  if (!current) {
-    return;
-  }
-
-  if (parseResult.ok) {
-    const previousShort = current.shortWindowPercent;
-    const previousWeekly = current.weeklyPercent;
-
-    current.lastShortWindowPercent = previousShort;
-    current.lastWeeklyPercent = previousWeekly;
-
-    if (parseResult.shortWindowPercent !== null) {
-      current.shortWindowPercent = parseResult.shortWindowPercent;
-    }
-
-    if (parseResult.weeklyPercent !== null) {
-      current.weeklyPercent = parseResult.weeklyPercent;
-    }
-
-    current.lastCheckedAt = checkedAt;
-    current.consecutiveParseFailures = 0;
-    current.lastParseFailureAt = null;
-
-    if (previousShort !== current.shortWindowPercent || previousWeekly !== current.weeklyPercent) {
-      current.lastChangedAt = checkedAt;
-    }
-
-    return;
-  }
-
-  current.lastCheckedAt = checkedAt;
-  current.consecutiveParseFailures = Number(current.consecutiveParseFailures || 0) + 1;
-  current.lastParseFailureAt = checkedAt;
+function clone(value) {
+  return JSON.parse(JSON.stringify(value));
 }
 
 async function runService(context, service) {
   const extraction = await extractUsagePage(context, service);
   const parseResult = service.parser(extraction);
+
+  if (parseResult.errorReason === "turnstile_verification_required") {
+    logger.warn(`${service.name} requires Turnstile verification. Open normal Chrome through CDP, pass verification manually, then rerun monitor.`);
+  }
 
   logger.info(`${service.name} usage parse completed.`, {
     ok: parseResult.ok,
@@ -59,6 +27,8 @@ async function runService(context, service) {
     parseConfidence: parseResult.parseConfidence,
     shortWindowPercentFound: parseResult.shortWindowPercent !== null,
     weeklyPercentFound: parseResult.weeklyPercent !== null,
+    remainingShortWindowPercent: parseResult.remainingShortWindowPercent,
+    remainingWeeklyPercent: parseResult.remainingWeeklyPercent,
     errorReason: parseResult.errorReason,
     navigationStatus: extraction.navigationStatus
   });
@@ -73,17 +43,62 @@ async function main() {
   const config = loadConfig();
   const state = loadState(config);
   const services = createServices(config);
-  const context = await chromium.launchPersistentContext(BROWSER_PROFILE_PATH, {
-    headless: config.headless,
-    viewport: { width: 1280, height: 900 }
-  });
+  const now = new Date();
+  let browserResources;
+  let context;
   const results = [];
+  const events = [];
+
+  try {
+    browserResources = await getBrowserContext(config);
+    context = browserResources.context;
+  } catch (error) {
+    logger.error(`Browser connection failed: ${error.message}`, error);
+    const cdpEvent = detectCdpUnreachableEvent({
+      state,
+      config,
+      now,
+      errorReason: "cdp_unreachable"
+    });
+
+    if (cdpEvent) {
+      events.push(cdpEvent);
+    }
+
+    try {
+      const dispatchResults = await dispatchNotifications({ config, events, now, logger });
+      applyNotificationPatches(state, dispatchResults);
+    } catch (dispatchError) {
+      logger.error(`Diagnostic notification failed: ${dispatchError.message}`, dispatchError);
+    }
+
+    state.meta = state.meta || {};
+    state.meta.lastMonitorRunAt = now.toISOString();
+    saveState(config, state);
+    return 1;
+  }
+
+  logger.info("Browser context ready for monitor.", {
+    mode: browserResources.mode,
+    cdpUrl: browserResources.mode === "cdp" ? browserResources.cdpUrl : undefined
+  });
 
   try {
     for (const service of services) {
       try {
         const result = await runService(context, service);
+        const previousServiceState = clone(state.services[service.key]);
         updateServiceState(state, result.parseResult);
+        const serviceEvents = detectEvents({
+          previousServiceState,
+          currentServiceState: state.services[service.key],
+          service,
+          config,
+          now,
+          parseSucceeded: result.parseResult.ok
+        });
+        applyInternalEventState(state, serviceEvents, now);
+        events.push(...serviceEvents);
         results.push(result.parseResult);
       } catch (error) {
         const failedResult = {
@@ -99,9 +114,31 @@ async function main() {
           errorReason: "unknown_page_structure"
         };
 
+        const previousServiceState = clone(state.services[service.key]);
         updateServiceState(state, failedResult);
+        const serviceEvents = detectEvents({
+          previousServiceState,
+          currentServiceState: state.services[service.key],
+          service,
+          config,
+          now,
+          parseSucceeded: false
+        });
+        events.push(...serviceEvents);
         results.push(failedResult);
         logger.error(`${service.name} monitor step failed.`, error);
+      }
+    }
+
+    const dispatchableEvents = events.filter((event) => event.type !== "usage_active");
+    let dispatchResults = [];
+
+    if (dispatchableEvents.length > 0) {
+      try {
+        dispatchResults = await dispatchNotifications({ config, events: dispatchableEvents, now, logger });
+        applyNotificationPatches(state, dispatchResults);
+      } catch (error) {
+        logger.error(`Notification dispatch failed: ${error.message}`, error);
       }
     }
 
@@ -115,15 +152,28 @@ async function main() {
         ok: result.ok,
         parseMethod: result.parseMethod,
         parseConfidence: result.parseConfidence,
+        remainingShortWindowPercent: result.remainingShortWindowPercent,
+        remainingWeeklyPercent: result.remainingWeeklyPercent,
         errorReason: result.errorReason
-      }))
+      })),
+      events: events.map((event) => ({
+        type: event.type,
+        serviceKey: event.serviceKey
+      })),
+      notificationsSent: dispatchResults.filter((result) => result.sent).length
     });
   } finally {
-    await context.close().catch(() => {});
+    await closeBrowserResources(browserResources);
   }
+
+  return 0;
 }
 
-main().catch((error) => {
-  logger.error(`Monitor failed: ${error.message}`, error);
-  process.exitCode = 1;
-});
+main()
+  .then((exitCode) => {
+    process.exit(exitCode || 0);
+  })
+  .catch((error) => {
+    logger.error(`Monitor failed: ${error.message}`, error);
+    process.exit(1);
+  });

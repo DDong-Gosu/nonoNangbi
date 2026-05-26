@@ -2,7 +2,8 @@ const {
   findPercentCandidates,
   inferErrorReason,
   makeParseResult,
-  pickBestPercent
+  pickBestPercent,
+  remainingFromRaw
 } = require("./common");
 
 const SHORT_WINDOW_KEYWORDS = [
@@ -29,6 +30,13 @@ const WEEKLY_KEYWORDS = [
 ];
 
 function parseCodexUsage(extraction) {
+  if (extraction.turnstileState && extraction.turnstileState.turnstileLikely) {
+    return makeParseResult(extraction, {
+      parseMethod: "turnstile_detection",
+      errorReason: "turnstile_verification_required"
+    });
+  }
+
   if (extraction.error) {
     return makeParseResult(extraction, {
       parseMethod: "navigation",
@@ -43,6 +51,10 @@ function parseCodexUsage(extraction) {
   const shortWindowPercent = shortCandidate ? shortCandidate.percent : null;
   const weeklyPercent = weeklyCandidate ? weeklyCandidate.percent : null;
   const fallbackPercent = shortWindowPercent === null && weeklyPercent === null && fallbackCandidate ? fallbackCandidate.percent : null;
+  const rawShortWindowPercent = shortWindowPercent !== null ? shortWindowPercent : fallbackPercent;
+  const rawWeeklyPercent = weeklyPercent;
+  const rawShortWindowMeaning = rawShortWindowPercent !== null ? "remaining" : "unknown";
+  const rawWeeklyPercentMeaning = rawWeeklyPercent !== null ? "remaining" : "unknown";
   const foundAny = shortWindowPercent !== null || weeklyPercent !== null || fallbackPercent !== null;
 
   if (!foundAny) {
@@ -57,8 +69,14 @@ function parseCodexUsage(extraction) {
 
   return makeParseResult(extraction, {
     ok: true,
-    shortWindowPercent: shortWindowPercent !== null ? shortWindowPercent : fallbackPercent,
-    weeklyPercent,
+    shortWindowPercent: rawShortWindowPercent,
+    weeklyPercent: rawWeeklyPercent,
+    rawShortWindowPercent,
+    rawWeeklyPercent,
+    rawShortWindowMeaning,
+    rawWeeklyPercentMeaning,
+    remainingShortWindowPercent: remainingFromRaw(rawShortWindowPercent, rawShortWindowMeaning),
+    remainingWeeklyPercent: remainingFromRaw(rawWeeklyPercent, rawWeeklyPercentMeaning),
     parseMethod: "codex_label_heuristic",
     parseConfidence: bothLabeled ? "high" : oneLabeled ? "medium" : "low",
     errorReason: null

@@ -1,6 +1,7 @@
 const { nowIso } = require("../utils/time");
 const {
   classifyLoginState,
+  classifyTurnstileState,
   createRawTextSample,
   extractCandidateLines,
   extractPercentTokens
@@ -178,7 +179,8 @@ async function extractUsagePage(context, service) {
       extractedAt,
       navigationStatus: response ? response.status() : null,
       error: null,
-      loginState: classifyLoginState(finalUrl, bodyText)
+      loginState: classifyLoginState(finalUrl, bodyText),
+      turnstileState: classifyTurnstileState(finalUrl, combinedText)
     };
   } catch (error) {
     const finalUrl = page.url();
@@ -202,7 +204,8 @@ async function extractUsagePage(context, service) {
         message: error.message,
         rawTextSample: createRawTextSample(bodyText)
       },
-      loginState: classifyLoginState(finalUrl, bodyText)
+      loginState: classifyLoginState(finalUrl, bodyText),
+      turnstileState: classifyTurnstileState(finalUrl, bodyText)
     };
   } finally {
     await page.close().catch(() => {});

@@ -1,13 +1,12 @@
 const fs = require("fs");
 const path = require("path");
-const { chromium } = require("playwright");
 
 const { loadConfig } = require("../src/config");
 const logger = require("../src/utils/logger");
 const { selectServices } = require("../src/services");
 const { extractUsagePage } = require("../src/extractors/usageExtractor");
+const { closeBrowserResources, getBrowserContext } = require("../src/browser/browserContext");
 
-const BROWSER_PROFILE_PATH = path.resolve("browser-profile");
 const LOGS_PATH = path.resolve("logs");
 
 function writeDiagnostics(service, extraction, parseResult) {
@@ -23,6 +22,7 @@ function writeDiagnostics(service, extraction, parseResult) {
     extractedAt: extraction.extractedAt,
     navigationStatus: extraction.navigationStatus,
     loginState: extraction.loginState,
+    turnstileState: extraction.turnstileState,
     error: extraction.error,
     percentTokens: extraction.percentTokens,
     candidateLines: extraction.candidateLines,
@@ -32,6 +32,12 @@ function writeDiagnostics(service, extraction, parseResult) {
       ok: parseResult.ok,
       shortWindowPercent: parseResult.shortWindowPercent,
       weeklyPercent: parseResult.weeklyPercent,
+      rawShortWindowPercent: parseResult.rawShortWindowPercent,
+      rawWeeklyPercent: parseResult.rawWeeklyPercent,
+      rawShortWindowMeaning: parseResult.rawShortWindowMeaning,
+      rawWeeklyPercentMeaning: parseResult.rawWeeklyPercentMeaning,
+      remainingShortWindowPercent: parseResult.remainingShortWindowPercent,
+      remainingWeeklyPercent: parseResult.remainingWeeklyPercent,
       parseMethod: parseResult.parseMethod,
       parseConfidence: parseResult.parseConfidence,
       errorReason: parseResult.errorReason
@@ -50,9 +56,12 @@ function writeDiagnostics(service, extraction, parseResult) {
 async function main() {
   const config = loadConfig();
   const services = selectServices(config, process.argv.slice(2));
-  const context = await chromium.launchPersistentContext(BROWSER_PROFILE_PATH, {
-    headless: config.headless,
-    viewport: { width: 1280, height: 900 }
+  const browserResources = await getBrowserContext(config);
+  const context = browserResources.context;
+
+  logger.info("Browser context ready for debug extraction.", {
+    mode: browserResources.mode,
+    cdpUrl: browserResources.mode === "cdp" ? browserResources.cdpUrl : undefined
   });
 
   try {
@@ -62,12 +71,18 @@ async function main() {
       const parseResult = service.parser(extraction);
       const artifacts = writeDiagnostics(service, extraction, parseResult);
 
+      if (parseResult.errorReason === "turnstile_verification_required") {
+        logger.warn(`${service.name} requires Turnstile verification. Open normal Chrome through CDP, pass verification manually, then rerun debug.`);
+      }
+
       logger.info(`Debug extraction completed for ${service.name}.`, {
         ok: parseResult.ok,
         parseMethod: parseResult.parseMethod,
         parseConfidence: parseResult.parseConfidence,
         shortWindowPercentFound: parseResult.shortWindowPercent !== null,
         weeklyPercentFound: parseResult.weeklyPercent !== null,
+        remainingShortWindowPercent: parseResult.remainingShortWindowPercent,
+        remainingWeeklyPercent: parseResult.remainingWeeklyPercent,
         errorReason: parseResult.errorReason,
         percentCount: extraction.percentTokens.length,
         candidateLineCount: extraction.candidateLines.length,
@@ -75,11 +90,15 @@ async function main() {
       });
     }
   } finally {
-    await context.close().catch(() => {});
+    await closeBrowserResources(browserResources);
   }
 }
 
-main().catch((error) => {
-  logger.error(`Debug page text failed: ${error.message}`, error);
-  process.exitCode = 1;
-});
+main()
+  .then(() => {
+    process.exit(0);
+  })
+  .catch((error) => {
+    logger.error(`Debug page text failed: ${error.message}`, error);
+    process.exit(1);
+  });

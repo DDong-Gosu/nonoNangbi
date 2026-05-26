@@ -13,7 +13,10 @@ const DEFAULTS = {
   quietHoursEnd: 8,
   headless: true,
   logLevel: "info",
-  stateFilePath: "data/state.json"
+  stateFilePath: "data/state.json",
+  browserConnectionMode: "cdp",
+  chromeCdpUrl: "http://127.0.0.1:9222",
+  chromeUserDataDir: "$HOME/.mongi-chrome-profile"
 };
 
 function readString(value, fallback = "") {
@@ -52,6 +55,16 @@ function readBoolean(value, fallback) {
   return fallback;
 }
 
+function readBrowserConnectionMode(value) {
+  const mode = readString(value, DEFAULTS.browserConnectionMode).toLowerCase();
+
+  if (!["cdp", "persistent"].includes(mode)) {
+    throw new Error("BROWSER_CONNECTION_MODE must be either cdp or persistent.");
+  }
+
+  return mode;
+}
+
 function loadConfig() {
   return {
     discordWebhookUrl: readString(process.env.DISCORD_WEBHOOK_URL),
@@ -67,7 +80,10 @@ function loadConfig() {
     },
     headless: readBoolean(process.env.HEADLESS, DEFAULTS.headless),
     logLevel: readString(process.env.LOG_LEVEL, DEFAULTS.logLevel),
-    stateFilePath: readString(process.env.STATE_FILE_PATH, DEFAULTS.stateFilePath)
+    stateFilePath: readString(process.env.STATE_FILE_PATH, DEFAULTS.stateFilePath),
+    browserConnectionMode: readBrowserConnectionMode(process.env.BROWSER_CONNECTION_MODE),
+    chromeCdpUrl: readString(process.env.CHROME_CDP_URL, DEFAULTS.chromeCdpUrl),
+    chromeUserDataDir: readString(process.env.CHROME_USER_DATA_DIR, DEFAULTS.chromeUserDataDir)
   };
 }
 
