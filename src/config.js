@@ -83,7 +83,8 @@ function loadConfig() {
     stateFilePath: readString(process.env.STATE_FILE_PATH, DEFAULTS.stateFilePath),
     browserConnectionMode: readBrowserConnectionMode(process.env.BROWSER_CONNECTION_MODE),
     chromeCdpUrl: readString(process.env.CHROME_CDP_URL, DEFAULTS.chromeCdpUrl),
-    chromeUserDataDir: readString(process.env.CHROME_USER_DATA_DIR, DEFAULTS.chromeUserDataDir)
+    chromeUserDataDir: readString(process.env.CHROME_USER_DATA_DIR, DEFAULTS.chromeUserDataDir),
+    dryRunNotifications: readBoolean(process.env.DRY_RUN_NOTIFICATIONS, false)
   };
 }
 

@@ -68,7 +68,19 @@ function lastIndexIncluding(lines, text) {
 function recentErrorLines(lines) {
   return lines
     .filter((line) => /\[(ERROR|WARN)]|failed|not reachable/i.test(line))
-    .slice(-10);
+    .slice(-10)
+    .map(sanitizeLogLine);
+}
+
+function sanitizeLogLine(line) {
+  const jsonStart = line.indexOf(" {");
+  const summary = jsonStart === -1 ? line : line.slice(0, jsonStart);
+
+  return summary
+    .replace(/https:\/\/(?:canary\.)?discord(?:app)?\.com\/api\/webhooks\/\S+/gi, "[REDACTED_DISCORD_WEBHOOK]")
+    .replace(/DISCORD_WEBHOOK_URL=\S+/gi, "DISCORD_WEBHOOK_URL=[REDACTED]")
+    .replace(/(authorization|cookie|token|password)["']?\s*[:=]\s*["']?[^"',\s}]+/gi, "$1=[REDACTED]")
+    .slice(0, 260);
 }
 
 function summarizeServices(summary) {

@@ -1,0 +1,99 @@
+import Foundation
+
+struct MongiStatus: Codable, Sendable {
+    var generatedAt: String?
+    var overallStatus: String?
+    var nextAction: String?
+    var health: Health?
+    var usage: Usage?
+    var today: Today?
+    var policy: Policy?
+    var warnings: [String]?
+    var historyWarnings: [String]?
+    var statusMeta: StatusMeta?
+
+    struct StatusMeta: Codable, Sendable {
+        var recentWindowMinutes: Int?
+        var staleWindowMinutes: Int?
+        var latestRunHealthy: Bool?
+        var latestFailureAgeMinutes: Int?
+        var oldFailuresToday: Int?
+    }
+
+    struct Health: Codable, Sendable {
+        var envFound: Bool?
+        var discordWebhookConfigured: Bool?
+        var browserMode: String?
+        var cdpReachable: Bool?
+        var launchdInstalled: Bool?
+        var launchdLoaded: Bool?
+        var quietHoursActive: Bool?
+    }
+
+    struct Usage: Codable, Sendable {
+        var codex: ServiceUsage?
+        var claude: ServiceUsage?
+    }
+
+    struct ServiceUsage: Codable, Sendable {
+        var shortRemaining: Int?
+        var weeklyRemaining: Int?
+        var failures: Int?
+        var lastCheckedAt: String?
+    }
+
+    struct Today: Codable, Sendable {
+        var runs: Int?
+        var successful: Int?
+        var failed: Int?
+        var notificationsSent: Int?
+        var events: [String: Int]?
+        var quietHoursSuppressionHint: Bool?
+        var latestRun: String?
+        var latestExitCode: Int?
+        var recentErrorsCount: Int?
+    }
+
+    struct Policy: Codable, Sendable {
+        var source: String?
+        var notifications: Notifications?
+        var thresholds: Thresholds?
+        var quietHours: QuietHours?
+        var message: Message?
+        var services: Services?
+    }
+
+    struct Notifications: Codable, Sendable {
+        var recoveredShort: Bool?
+        var recoveredWeekly: Bool?
+        var sessionStopped: Bool?
+        var weeklyIdle: Bool?
+        var diagnostics: Bool?
+    }
+
+    struct Thresholds: Codable, Sendable {
+        var sessionStoppedMinutes: Int?
+        var weeklyIdleReminderHours: Int?
+        var diagnosticReminderHours: Int?
+    }
+
+    struct QuietHours: Codable, Sendable {
+        var enabled: Bool?
+        var startHour: Int?
+        var endHour: Int?
+    }
+
+    struct Message: Codable, Sendable {
+        var intensity: String?
+    }
+
+    struct Services: Codable, Sendable {
+        var codex: ServicePolicy?
+        var claude: ServicePolicy?
+    }
+
+    struct ServicePolicy: Codable, Sendable {
+        var enabled: Bool?
+        var weeklyIdleEnabled: Bool?
+    }
+}

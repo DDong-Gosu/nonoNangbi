@@ -67,7 +67,11 @@ async function main() {
   try {
     for (const service of services) {
       logger.info(`Debug extraction started for ${service.name}.`);
-      const extraction = await extractUsagePage(context, service, config);
+      const extraction = await extractUsagePage(context, service, {
+        reuseExistingPages: true,
+        openMissingPages: true,
+        allowFocusSteal: false
+      });
       const parseResult = service.parser(extraction);
       const artifacts = writeDiagnostics(service, extraction, parseResult);
 

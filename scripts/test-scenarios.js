@@ -1,6 +1,7 @@
 const { detectCdpUnreachableEvent, detectEvents } = require("../src/events/eventDetector");
 const { dispatchNotifications, applyNotificationPatches } = require("../src/notifications/notificationDispatcher");
 const { parseClaudeUsage } = require("../src/parsers/claudeParser");
+const { parseCodexUsage } = require("../src/parsers/codexParser");
 const { createDefaultState } = require("../src/state/stateStore");
 const { updateServiceState } = require("../src/state/serviceStateUpdater");
 
@@ -238,6 +239,8 @@ async function main() {
   }
 
   {
+    // Use a mock sender (no dryRun) so patches are applied correctly.
+    // dryRun mode intentionally skips patches to avoid state mutation without real send.
     const state = createDefaultState();
     const events = [
       {
@@ -249,10 +252,40 @@ async function main() {
         occurredAt: "2026-05-26T10:00:00+09:00"
       }
     ];
-    const { results } = await dispatchDry(events);
+    const results = await dispatchNotifications({
+      config: baseConfig,
+      events,
+      now: new Date("2026-05-26T10:00:00+09:00"),
+      dryRun: false,
+      sender: async () => {}
+    });
     applyNotificationPatches(state, results);
     assert(Boolean(state.services.claude.lastWeeklyFullReminderAt), "dispatcher patch did not update weekly idle timestamp.");
     scenarioResults.push("Dispatcher patch application");
+  }
+
+  {
+    const state = createDefaultState();
+    const parseResult = parseCodexUsage({
+      serviceKey: "codex",
+      serviceName: "Codex",
+      bodyText: "",
+      candidateLines: [],
+      domCandidates: [],
+      accessibilityCandidates: [],
+      error: {
+        reason: "usage_page_not_open",
+        message: "Codex usage page is not open.",
+        rawTextSample: ""
+      },
+      loginState: { loginLikely: false, textLooksUsage: false },
+      turnstileState: { turnstileLikely: false }
+    });
+    updateServiceState(state, parseResult);
+    assert(parseResult.ok === false, "Missing usage page should not parse successfully.");
+    assert(parseResult.errorReason === "usage_page_not_open", "Missing usage page reason should be preserved.");
+    assert(state.services.codex.lastParseFailureReason === "usage_page_not_open", "Missing usage page reason should persist in state.");
+    scenarioResults.push("Missing usage page graceful failure");
   }
 
   {

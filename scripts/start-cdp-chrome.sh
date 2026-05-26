@@ -59,6 +59,41 @@ expand_home_path() {
   printf "%s" "$value"
 }
 
+chrome_app_path() {
+  case "$CHROME_PATH" in
+    *.app/Contents/MacOS/*)
+      printf "%s" "${CHROME_PATH%%.app/Contents/MacOS/*}.app"
+      ;;
+    *)
+      printf ""
+      ;;
+  esac
+}
+
+launch_chrome() {
+  local app_path
+  app_path="$(chrome_app_path)"
+
+  if [[ "$(uname -s)" == "Darwin" ]] && [[ -n "$app_path" ]] && [[ -d "$app_path" ]]; then
+    open -n "$app_path" --args \
+      --remote-debugging-port="$CHROME_CDP_PORT" \
+      --user-data-dir="$CHROME_USER_DATA_DIR" \
+      "$CODEX_USAGE_URL" \
+      "$CLAUDE_USAGE_URL"
+    return
+  fi
+
+  nohup "$CHROME_PATH" \
+    --remote-debugging-port="$CHROME_CDP_PORT" \
+    --user-data-dir="$CHROME_USER_DATA_DIR" \
+    "$CODEX_USAGE_URL" \
+    "$CLAUDE_USAGE_URL" \
+    >/dev/null 2>&1 &
+
+  chrome_pid=$!
+  disown "$chrome_pid" 2>/dev/null || true
+}
+
 load_dotenv_defaults
 
 DEFAULT_CHROME_CDP_PORT="9222"
@@ -90,6 +125,20 @@ wait_for_cdp() {
   return 1
 }
 
+wait_for_stable_cdp() {
+  local attempts=6
+
+  for _ in $(seq 1 "$attempts"); do
+    if ! cdp_reachable; then
+      return 1
+    fi
+
+    sleep 0.5
+  done
+
+  return 0
+}
+
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "Mongi CDP Chrome starter is intended for macOS."
   echo "Current system: $(uname -s)"
@@ -117,17 +166,18 @@ echo "Starting Mongi CDP Chrome..."
 echo "CDP URL: $CHROME_CDP_URL"
 echo "Profile: $CHROME_USER_DATA_DIR"
 
-"$CHROME_PATH" \
-  --remote-debugging-port="$CHROME_CDP_PORT" \
-  --user-data-dir="$CHROME_USER_DATA_DIR" \
-  "$CODEX_USAGE_URL" \
-  "$CLAUDE_USAGE_URL" \
-  >/dev/null 2>&1 &
+launch_chrome
 
 if ! wait_for_cdp; then
   echo "CDP Chrome was launched, but CDP is not reachable yet."
   echo "Check whether port $CHROME_CDP_PORT is already in use or Chrome blocked startup."
   echo "Then run: npm run check:cdp"
+  exit 1
+fi
+
+if ! wait_for_stable_cdp; then
+  echo "CDP Chrome became unreachable shortly after launch."
+  echo "Run npm run health, then start Mongi again if needed."
   exit 1
 fi
 

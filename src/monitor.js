@@ -8,17 +8,46 @@ const { extractUsagePage } = require("./extractors/usageExtractor");
 const { closeBrowserResources, getBrowserContext } = require("./browser/browserContext");
 const { detectCdpUnreachableEvent, detectEvents } = require("./events/eventDetector");
 const { applyNotificationPatches, dispatchNotifications } = require("./notifications/notificationDispatcher");
+const { loadPolicy } = require("./policy/policyStore");
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function configWithPolicy(config, policy) {
+  return {
+    ...config,
+    idleMinutesBeforeSummary: policy.thresholds.sessionStoppedMinutes,
+    weeklyFullReminderHours: policy.thresholds.weeklyIdleReminderHours,
+    diagnosticReminderHours: policy.thresholds.diagnosticReminderHours,
+    quietHours: {
+      enabled: policy.quietHours.enabled,
+      startHour: policy.quietHours.startHour,
+      endHour: policy.quietHours.endHour
+    },
+    policy
+  };
+}
+
+function serviceEnabled(config, serviceKey) {
+  const servicePolicy = config.policy && config.policy.services && config.policy.services[serviceKey];
+  return !servicePolicy || servicePolicy.enabled !== false;
+}
+
 async function runService(context, service) {
-  const extraction = await extractUsagePage(context, service);
+  const extraction = await extractUsagePage(context, service, {
+    reuseExistingPages: true,
+    openMissingPages: false,
+    allowFocusSteal: false
+  });
   const parseResult = service.parser(extraction);
 
   if (parseResult.errorReason === "turnstile_verification_required") {
     logger.warn(`${service.name} requires Turnstile verification. Open normal Chrome through CDP, pass verification manually, then rerun monitor.`);
+  }
+
+  if (parseResult.errorReason === "usage_page_not_open") {
+    logger.warn(`${service.name} usage page is not open. Scheduled monitor will not open new tabs; run Mongi starter and confirm the usage page is visible.`);
   }
 
   logger.info(`${service.name} usage parse completed.`, {
@@ -40,14 +69,26 @@ async function runService(context, service) {
 }
 
 async function main() {
-  const config = loadConfig();
+  const baseConfig = loadConfig();
+  const argvDryRun = process.argv.includes("--dry-run-notifications");
+  const policyResult = loadPolicy({ strictJson: false });
+  const config = configWithPolicy(baseConfig, policyResult.policy);
+  const dryRun = config.dryRunNotifications || argvDryRun;
+
+  if (dryRun) {
+    logger.info("DRY RUN mode: Discord notifications will not be sent.");
+  }
   const state = loadState(config);
-  const services = createServices(config);
+  const services = createServices(config).filter((service) => serviceEnabled(config, service.key));
   const now = new Date();
   let browserResources;
   let context;
   const results = [];
   const events = [];
+
+  for (const warning of policyResult.warnings) {
+    logger.warn("Policy warning.", { warning });
+  }
 
   try {
     browserResources = await getBrowserContext(config);
@@ -66,7 +107,7 @@ async function main() {
     }
 
     try {
-      const dispatchResults = await dispatchNotifications({ config, events, now, logger });
+      const dispatchResults = await dispatchNotifications({ config, events, now, dryRun, logger });
       applyNotificationPatches(state, dispatchResults);
     } catch (dispatchError) {
       logger.error(`Diagnostic notification failed: ${dispatchError.message}`, dispatchError);
@@ -135,7 +176,7 @@ async function main() {
 
     if (dispatchableEvents.length > 0) {
       try {
-        dispatchResults = await dispatchNotifications({ config, events: dispatchableEvents, now, logger });
+        dispatchResults = await dispatchNotifications({ config, events: dispatchableEvents, now, dryRun, logger });
         applyNotificationPatches(state, dispatchResults);
       } catch (error) {
         logger.error(`Notification dispatch failed: ${error.message}`, error);

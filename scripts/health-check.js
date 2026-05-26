@@ -131,7 +131,8 @@ function summarizeRecentLogs() {
     lastWrapperStartedAt: started ? started[1] : null,
     lastWrapperFinishedAt: finished ? finished[1] : null,
     lastExitCode: finished ? finished[2] : null,
-    notificationsSent: monitorCompleted ? monitorCompleted.notificationsSent : null
+    notificationsSent: monitorCompleted ? monitorCompleted.notificationsSent : null,
+    services: monitorCompleted && Array.isArray(monitorCompleted.services) ? monitorCompleted.services : []
   };
 }
 
@@ -145,8 +146,22 @@ function printService(name, service) {
   console.log(`- ${name}: short ${formatValue(service.remainingShortWindowPercent)}, weekly ${formatValue(service.remainingWeeklyPercent)}, failures ${Number(service.consecutiveParseFailures || 0)}, checked ${formatValue(service.lastCheckedAt)}`);
 
   if (Number(service.consecutiveParseFailures || 0) > 0) {
-    console.log(`  Next: Check login/Turnstile, then run npm run debug:page-text -- ${name.toLowerCase()}`);
+    if (service.lastParseFailureReason === "usage_page_not_open") {
+      console.log("  Next: Open Mongi Start.app, double-click Mongi Start.command, or run npm run start:chrome. Then confirm the usage page is visible.");
+    } else {
+      console.log(`  Next: Check login/Turnstile, then run npm run debug:page-text -- ${name.toLowerCase()}`);
+    }
   }
+}
+
+function serviceHasMissingUsagePage(serviceKey, state, recentLogs) {
+  const serviceState = state && state.services && state.services[serviceKey];
+
+  if (serviceState && serviceState.lastParseFailureReason === "usage_page_not_open") {
+    return true;
+  }
+
+  return recentLogs.services.some((service) => service.serviceKey === serviceKey && service.errorReason === "usage_page_not_open");
 }
 
 async function main() {
@@ -172,7 +187,7 @@ async function main() {
   }
 
   if (!cdpOk && config.browserConnectionMode === "cdp") {
-    nextActions.push("Run npm run start:chrome or double-click Mongi Start.command");
+    nextActions.push("Open Mongi Start.app, double-click Mongi Start.command, or run npm run start:chrome");
   }
 
   if (!exists(PLIST_PATH) || !loaded) {
@@ -181,6 +196,19 @@ async function main() {
 
   if (!stateExists) {
     nextActions.push("Run npm run monitor to create state");
+  }
+
+  const missingUsagePages = [
+    serviceHasMissingUsagePage("codex", state, recentLogs) ? "Codex" : null,
+    serviceHasMissingUsagePage("claude", state, recentLogs) ? "Claude" : null
+  ].filter(Boolean);
+
+  if (missingUsagePages.length > 0) {
+    nextActions.push(`Confirm ${missingUsagePages.join("/")} usage pages are open in the CDP Chrome profile`);
+  }
+
+  if (quietActive) {
+    nextActions.push("Discord event notifications may be suppressed during quiet hours");
   }
 
   for (const [label, size] of [["launchd stdout", outLogSize], ["launchd stderr", errorLogSize]]) {

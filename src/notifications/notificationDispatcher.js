@@ -11,6 +11,25 @@ const DISCORD_EVENT_TYPES = new Set([
   "cdp_unreachable_digest"
 ]);
 
+const EVENT_POLICY_KEYS = {
+  recovered_short: "recoveredShort",
+  recovered_weekly: "recoveredWeekly",
+  session_stopped: "sessionStopped",
+  weekly_idle: "weeklyIdle",
+  parse_failure_digest: "diagnostics",
+  cdp_unreachable_digest: "diagnostics"
+};
+
+function notificationEnabled(config, eventType) {
+  const policyKey = EVENT_POLICY_KEYS[eventType];
+
+  if (!policyKey || !config.policy || !config.policy.notifications) {
+    return true;
+  }
+
+  return config.policy.notifications[policyKey] !== false;
+}
+
 function patchForSentEvent(event) {
   const servicePatch = {};
   const metaPatch = {};
@@ -62,6 +81,17 @@ async function dispatchNotifications({ config, events, now = new Date(), dryRun 
       continue;
     }
 
+    if (!notificationEnabled(config, event.type)) {
+      results.push({
+        event,
+        sent: false,
+        suppressed: "policy_disabled",
+        message: null,
+        patch: null
+      });
+      continue;
+    }
+
     if (quiet) {
       results.push({
         event,
@@ -75,10 +105,27 @@ async function dispatchNotifications({ config, events, now = new Date(), dryRun 
 
     const message = getEventMessage(event);
 
-    if (!dryRun) {
-      await sender(config, message);
+    if (dryRun) {
+      results.push({
+        event,
+        sent: false,
+        suppressed: "dry_run",
+        message,
+        patch: null
+      });
+
+      if (logger) {
+        logger.info("DRY RUN: Would have sent Discord notification.", {
+          eventType: event.type,
+          serviceKey: event.serviceKey,
+          messagePreview: message.slice(0, 120)
+        });
+      }
+
+      continue;
     }
 
+    await sender(config, message);
     const patch = patchForSentEvent(event);
     results.push({
       event,
@@ -91,8 +138,7 @@ async function dispatchNotifications({ config, events, now = new Date(), dryRun 
     if (logger) {
       logger.info("Discord event notification dispatched.", {
         eventType: event.type,
-        serviceKey: event.serviceKey,
-        dryRun
+        serviceKey: event.serviceKey
       });
     }
   }

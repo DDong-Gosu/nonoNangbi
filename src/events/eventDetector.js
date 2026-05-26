@@ -50,6 +50,21 @@ function isQuietHours(config, now = new Date()) {
   return hour >= start || hour < end;
 }
 
+function diagnosticRateLimitHours(config) {
+  const value = config && config.diagnosticReminderHours;
+  return Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : DIAGNOSTIC_RATE_LIMIT_HOURS;
+}
+
+function weeklyIdleEnabled(config, serviceKey) {
+  const servicePolicy = config && config.policy && config.policy.services && config.policy.services[serviceKey];
+
+  if (!servicePolicy || servicePolicy.weeklyIdleEnabled === undefined) {
+    return true;
+  }
+
+  return servicePolicy.weeklyIdleEnabled === true;
+}
+
 function hasDecreased(current, previous) {
   return current !== null && previous !== null && current < previous;
 }
@@ -124,6 +139,7 @@ function detectEvents({ previousServiceState, currentServiceState, service, conf
     !recoveredWeekly &&
     !sessionStopped &&
     !quiet &&
+    weeklyIdleEnabled(config, service.key) &&
     hoursSince(currentServiceState.lastWeeklyFullReminderAt, now) >= config.weeklyFullReminderHours
   ) {
     events.push({
@@ -134,7 +150,7 @@ function detectEvents({ previousServiceState, currentServiceState, service, conf
 
   if (
     Number(currentServiceState.consecutiveParseFailures || 0) >= DIAGNOSTIC_FAILURE_THRESHOLD &&
-    hoursSince(currentServiceState.lastParseFailureDigestAt, now) >= DIAGNOSTIC_RATE_LIMIT_HOURS
+    hoursSince(currentServiceState.lastParseFailureDigestAt, now) >= diagnosticRateLimitHours(config)
   ) {
     events.push({
       ...baseEvent("parse_failure_digest", service, currentServiceState, now),
@@ -147,7 +163,9 @@ function detectEvents({ previousServiceState, currentServiceState, service, conf
 }
 
 function detectCdpUnreachableEvent({ state, config, now = new Date(), errorReason = "cdp unreachable" }) {
-  if (hoursSince(state.meta && state.meta.lastCdpUnreachableDigestAt, now) < DIAGNOSTIC_RATE_LIMIT_HOURS) {
+  const reminderHours = diagnosticRateLimitHours(config);
+
+  if (hoursSince(state.meta && state.meta.lastCdpUnreachableDigestAt, now) < reminderHours) {
     return null;
   }
 
@@ -161,7 +179,7 @@ function detectCdpUnreachableEvent({ state, config, now = new Date(), errorReaso
     rawWeeklyPercent: null,
     errorReason,
     occurredAt: new Date(now).toISOString(),
-    reminderHours: DIAGNOSTIC_RATE_LIMIT_HOURS,
+    reminderHours,
     quiet: isQuietHours(config, now)
   };
 }

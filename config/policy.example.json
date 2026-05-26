@@ -1,0 +1,32 @@
+{
+  "notifications": {
+    "recoveredShort": true,
+    "recoveredWeekly": true,
+    "sessionStopped": true,
+    "weeklyIdle": true,
+    "diagnostics": true
+  },
+  "thresholds": {
+    "sessionStoppedMinutes": 20,
+    "weeklyIdleReminderHours": 4,
+    "diagnosticReminderHours": 6
+  },
+  "quietHours": {
+    "enabled": true,
+    "startHour": 23,
+    "endHour": 8
+  },
+  "message": {
+    "intensity": "normal"
+  },
+  "services": {
+    "codex": {
+      "enabled": true,
+      "weeklyIdleEnabled": true
+    },
+    "claude": {
+      "enabled": true,
+      "weeklyIdleEnabled": true
+    }
+  }
+}
