@@ -144,7 +144,14 @@ function printService(name, service) {
     return;
   }
 
-  console.log(`- ${name}: short remaining ${formatValue(service.remainingShortWindowPercent)}, weekly remaining ${formatValue(service.remainingWeeklyPercent)}, short used ${formatValue(service.usedShortWindowPercent)}, weekly used ${formatValue(service.usedWeeklyPercent)}, failures ${Number(service.consecutiveParseFailures || 0)}, checked ${formatValue(service.lastCheckedAt)}`);
+  const successAt = service.lastSuccessfulCheckedAt || (Number(service.consecutiveParseFailures || 0) > 0 ? null : service.lastCheckedAt);
+  const attemptedAt = service.lastAttemptedAt || service.lastCheckedAt;
+
+  console.log(`- ${name}: short remaining ${formatValue(service.remainingShortWindowPercent)}, weekly remaining ${formatValue(service.remainingWeeklyPercent)}, short used ${formatValue(service.usedShortWindowPercent)}, weekly used ${formatValue(service.usedWeeklyPercent)}, failures ${Number(service.consecutiveParseFailures || 0)}, checked ${formatValue(successAt)}, attempted ${formatValue(attemptedAt)}`);
+
+  if (service.source && service.source.selectedTab) {
+    console.log(`  Source: ${formatValue(service.source.selectedTab.title)} / ${formatValue(service.source.selectedTab.url)} / target ${formatValue(service.source.selectedTab.targetId)}`);
+  }
 
   if (Number(service.consecutiveParseFailures || 0) > 0) {
     if (service.lastParseFailureReason === "usage_page_not_open") {

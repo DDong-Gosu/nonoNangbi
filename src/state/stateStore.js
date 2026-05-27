@@ -28,6 +28,8 @@ function createServiceState() {
     shortWindowLabel: null,
     weeklyWindowLabel: null,
     lastCheckedAt: null,
+    lastAttemptedAt: null,
+    lastSuccessfulCheckedAt: null,
     lastChangedAt: null,
     sessionSummarySent: false,
     lastShortRecoveredAt: null,
@@ -35,7 +37,10 @@ function createServiceState() {
     lastWeeklyFullReminderAt: null,
     consecutiveParseFailures: 0,
     lastParseFailureAt: null,
-    lastParseFailureDigestAt: null
+    lastParseFailedAt: null,
+    lastParseFailureReason: null,
+    lastParseFailureDigestAt: null,
+    source: null
   };
 }
 
@@ -171,6 +176,26 @@ function normalizeServiceState(serviceState, defaultServiceState) {
 
   if (service.weeklyWindowLabel === undefined) {
     service.weeklyWindowLabel = null;
+  }
+
+  if (service.lastAttemptedAt === undefined) {
+    service.lastAttemptedAt = service.lastCheckedAt || null;
+  }
+
+  if (service.lastSuccessfulCheckedAt === undefined) {
+    service.lastSuccessfulCheckedAt = Number(service.consecutiveParseFailures || 0) > 0 ? null : service.lastCheckedAt || null;
+  }
+
+  if (service.lastParseFailedAt === undefined) {
+    service.lastParseFailedAt = service.lastParseFailureAt || null;
+  }
+
+  if (service.lastParseFailureReason === undefined) {
+    service.lastParseFailureReason = null;
+  }
+
+  if (service.source === undefined) {
+    service.source = null;
   }
 
   return service;

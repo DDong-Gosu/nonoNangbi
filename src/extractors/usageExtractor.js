@@ -9,6 +9,7 @@ const {
 
 const NAVIGATION_TIMEOUT_MS = 45000;
 const DOM_EXTRACTION_TIMEOUT_MS = 8000;
+const USAGE_READY_TIMEOUT_MS = 15000;
 
 function normalizeUrl(value) {
   try {
@@ -97,9 +98,69 @@ function createMissingUsagePageExtraction(service, extractedAt) {
 }
 
 async function findExistingUsagePage(context, service) {
-  const pages = context.pages();
+  const candidates = await listUsagePageCandidates(context, service);
+  const selected = selectUsagePageCandidate(candidates);
 
-  for (const page of pages) {
+  return selected ? selected.page : null;
+}
+
+function sourceMetadataFromCandidate(candidate, reason) {
+  if (!candidate) {
+    return {
+      selected: false,
+      reason,
+      tabCount: 0,
+      candidateCount: 0,
+      selectedTab: null,
+      candidates: []
+    };
+  }
+
+  return {
+    selected: true,
+    reason,
+    tabCount: candidate.tabCount,
+    candidateCount: candidate.candidateCount,
+    selectedTab: sanitizeCandidate(candidate),
+    candidates: candidate.candidates.map(sanitizeCandidate)
+  };
+}
+
+function sanitizeCandidate(candidate) {
+  return {
+    index: candidate.index,
+    targetId: candidate.targetId || null,
+    url: candidate.url || "",
+    title: candidate.title || "",
+    matchType: candidate.matchType || "unknown",
+    score: candidate.score || 0
+  };
+}
+
+async function getPageTargetInfo(page) {
+  try {
+    const session = await page.context().newCDPSession(page);
+    const result = await session.send("Target.getTargetInfo");
+    await session.detach().catch(() => {});
+    return result && result.targetInfo ? result.targetInfo : null;
+  } catch {
+    return null;
+  }
+}
+
+async function pageTitle(page) {
+  try {
+    return await page.title();
+  } catch {
+    return "";
+  }
+}
+
+async function listUsagePageCandidates(context, service) {
+  const pages = context.pages();
+  const candidates = [];
+
+  for (const [index, page] of pages.entries()) {
     let pageUrl = "";
 
     try {
@@ -108,12 +169,54 @@ async function findExistingUsagePage(context, service) {
       pageUrl = "";
     }
 
-    if (serviceUsagePageMatches(service, pageUrl)) {
-      return page;
+    if (!serviceUsagePageMatches(service, pageUrl)) {
+      continue;
     }
+
+    const targetInfo = await getPageTargetInfo(page);
+    const exact = configuredUsageUrlMatches(pageUrl, service.usageUrl);
+    const title = targetInfo && targetInfo.title ? targetInfo.title : await pageTitle(page);
+    const titleMatch = String(title || "").toLowerCase().includes(service.name.toLowerCase());
+
+    candidates.push({
+      page,
+      index,
+      targetId: targetInfo && targetInfo.targetId ? targetInfo.targetId : null,
+      url: pageUrl,
+      title,
+      matchType: exact ? "exact_configured_url" : "provider_url_pattern",
+      score: (exact ? 100 : 50) + (titleMatch ? 10 : 0) + index / 1000
+    });
   }
 
-  return null;
+  return candidates.map((candidate) => ({
+    ...candidate,
+    tabCount: pages.length,
+    candidateCount: candidates.length,
+    candidates
+  }));
+}
+
+function selectUsagePageCandidate(candidates) {
+  return [...(candidates || [])]
+    .sort((a, b) => b.score - a.score || b.index - a.index)[0] || null;
+}
+
+async function selectExistingUsagePage(context, service) {
+  const candidates = await listUsagePageCandidates(context, service);
+  const selected = selectUsagePageCandidate(candidates);
+
+  return {
+    page: selected ? selected.page : null,
+    source: selected ? sourceMetadataFromCandidate(selected, "selected_existing_usage_tab") : {
+      selected: false,
+      reason: "usage_page_not_open",
+      tabCount: context.pages().length,
+      candidateCount: 0,
+      selectedTab: null,
+      candidates: []
+    }
+  };
 }
 
 async function safeEvaluate(page, callback, fallback) {
@@ -130,6 +233,41 @@ async function extractBodyText(page) {
   } catch (error) {
     return "";
   }
+}
+
+function usageTextReady(service, text) {
+  const value = String(text || "");
+
+  if (!/%/.test(value)) {
+    return false;
+  }
+
+  if (service.key === "codex") {
+    return /5\s*시간|5\s*hour|5-hour|5h/i.test(value) && /주간|weekly|week/i.test(value);
+  }
+
+  if (service.key === "claude") {
+    return /현재\s*세션|current\s*session|세션/i.test(value) && /모든\s*모델|all\s*models|model/i.test(value);
+  }
+
+  return true;
+}
+
+async function waitForUsageText(page, service) {
+  const deadline = Date.now() + USAGE_READY_TIMEOUT_MS;
+  let latestText = "";
+
+  while (Date.now() < deadline) {
+    latestText = await extractBodyText(page);
+
+    if (usageTextReady(service, latestText)) {
+      return latestText;
+    }
+
+    await page.waitForTimeout(500).catch(() => {});
+  }
+
+  return latestText;
 }
 
 async function extractDomCandidates(page) {
@@ -249,22 +387,46 @@ async function extractUsagePage(context, service, options = {}) {
   const settings = {
     reuseExistingPages: options.reuseExistingPages !== false,
     openMissingPages: options.openMissingPages !== false,
-    allowFocusSteal: options.allowFocusSteal === true
+    allowFocusSteal: options.allowFocusSteal === true,
+    reloadExistingPages: options.reloadExistingPages !== false
   };
   let page = null;
   let shouldClosePage = false;
+  let source = null;
+  let reusedExistingPage = false;
+  let reloadedExistingPage = false;
 
   if (settings.reuseExistingPages) {
-    page = await findExistingUsagePage(context, service);
+    const selected = await selectExistingUsagePage(context, service);
+    page = selected.page;
+    source = selected.source;
+    reusedExistingPage = Boolean(page);
   }
 
   if (!page && !settings.openMissingPages) {
-    return createMissingUsagePageExtraction(service, extractedAt);
+    const missing = createMissingUsagePageExtraction(service, extractedAt);
+    missing.source = source || {
+      selected: false,
+      reason: "usage_page_not_open",
+      tabCount: context.pages().length,
+      candidateCount: 0,
+      selectedTab: null,
+      candidates: []
+    };
+    return missing;
   }
 
   if (!page) {
     page = await context.newPage();
     shouldClosePage = true;
+    source = {
+      selected: true,
+      reason: "opened_new_controlled_tab",
+      tabCount: context.pages().length,
+      candidateCount: 0,
+      selectedTab: null,
+      candidates: []
+    };
   }
 
   try {
@@ -279,6 +441,13 @@ async function extractUsagePage(context, service, options = {}) {
         waitUntil: "domcontentloaded",
         timeout: NAVIGATION_TIMEOUT_MS
       });
+      source.reason = "navigated_selected_tab";
+    } else if (reusedExistingPage && settings.reloadExistingPages) {
+      response = await page.reload({
+        waitUntil: "domcontentloaded",
+        timeout: NAVIGATION_TIMEOUT_MS
+      });
+      reloadedExistingPage = true;
     }
 
     try {
@@ -287,7 +456,26 @@ async function extractUsagePage(context, service, options = {}) {
     }
 
     const finalUrl = page.url();
-    const bodyText = await extractBodyText(page);
+    const targetInfo = await getPageTargetInfo(page);
+    const title = targetInfo && targetInfo.title ? targetInfo.title : await pageTitle(page);
+    const selectedTab = source && source.selectedTab ? source.selectedTab : {};
+    source = {
+      ...(source || {}),
+      selected: true,
+      selectedTab: {
+        ...selectedTab,
+        targetId: (targetInfo && targetInfo.targetId) || selectedTab.targetId || null,
+        url: finalUrl,
+        title,
+        matchType: serviceUsagePageMatches(service, finalUrl) ? (configuredUsageUrlMatches(finalUrl, service.usageUrl) ? "exact_configured_url" : "provider_url_pattern") : "navigated",
+        score: selectedTab.score || null
+      },
+      reusedExistingPage,
+      reloadedExistingPage,
+      openedNewPage: shouldClosePage,
+      activelyNavigated: Boolean(response && !reloadedExistingPage)
+    };
+    const bodyText = await waitForUsageText(page, service);
     const domCandidates = await extractDomCandidates(page);
     const accessibilityCandidates = await extractAccessibilityCandidates(page);
     const combinedText = [
@@ -308,6 +496,7 @@ async function extractUsagePage(context, service, options = {}) {
       accessibilityCandidates,
       extractedAt,
       navigationStatus: response ? response.status() : null,
+      source,
       error: null,
       loginState: classifyLoginState(finalUrl, bodyText),
       turnstileState: classifyTurnstileState(finalUrl, combinedText)
@@ -329,6 +518,7 @@ async function extractUsagePage(context, service, options = {}) {
       accessibilityCandidates: [],
       extractedAt,
       navigationStatus: null,
+      source,
       error: {
         reason: errorReason,
         message: error.message,
@@ -346,5 +536,7 @@ async function extractUsagePage(context, service, options = {}) {
 
 module.exports = {
   extractUsagePage,
+  listUsagePageCandidates,
+  selectUsagePageCandidate,
   serviceUsagePageMatches
 };

@@ -124,6 +124,11 @@ function makeParseResult(extraction, overrides = {}) {
     rawTextSample: createRawTextSample(extraction.bodyText),
     parsedAt: nowIso(),
     errorReason: null,
+    source: extraction.source || null,
+    selectedCandidates: {
+      shortWindow: null,
+      weekly: null
+    },
     ...overrides
   };
 }
@@ -240,6 +245,21 @@ function pickBestPercent(candidates, keywords) {
   return scored[0] || null;
 }
 
+function safeCandidateContext(candidate) {
+  if (!candidate) {
+    return null;
+  }
+
+  return {
+    percent: candidate.percent,
+    token: candidate.token,
+    score: candidate.score || 0,
+    context: normalizeWhitespace(candidate.tokenContext || candidate.line || candidate.context).slice(0, 240),
+    previousLine: normalizeWhitespace(candidate.previousLine || "").slice(0, 160),
+    nextLine: normalizeWhitespace(candidate.nextLine || "").slice(0, 160)
+  };
+}
+
 function usedFromRaw(rawPercent, meaning) {
   if (rawPercent === null || rawPercent === undefined) {
     return null;
@@ -315,6 +335,7 @@ module.exports = {
   percentTokenToNumber,
   pickBestPercent,
   remainingFromRaw,
+  safeCandidateContext,
   scoreCandidate,
   usedFromRaw
 };

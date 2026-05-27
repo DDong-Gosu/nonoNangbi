@@ -162,6 +162,18 @@ Discord 메시지는 한국어 우선 3줄 이하로 보낸다. Background refre
 
 최신 값이 필요하면 refresh를 실행한다. Last refreshed와 각 provider의 last checked 시간이 stale data 여부를 확인하는 기준이다.
 
+Mongi는 CDP-controlled Chrome의 provider tab을 source로 읽는다. 일반 Chrome이나 다른 profile에서 보고 있는 화면은 Mongi가 읽는 source가 아닐 수 있다.
+
+Live source 확인:
+
+```bash
+npm run verify:usage-source
+```
+
+이 명령은 Codex/Claude별 selected tab URL, title, target id, safe percentage context, parser output, status-json 비교를 출력한다. Provider tab은 읽기 전에 reload되어 stale DOM을 줄인다.
+
+사용량 추출이 실패하면 이전 값은 보존되지만 fresh 값처럼 표시하지 않는다. status-json과 menu bar는 `lastSuccessfulCheckedAt`, `lastAttemptedAt`, stale/failure 상태를 노출하고, Discord usage line은 stale provider 값을 생략한다. 누락된 값은 100%로 채우지 않는다.
+
 ## Safe verification
 
 V1 안전 검증:

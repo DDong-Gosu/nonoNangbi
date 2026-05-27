@@ -11,6 +11,7 @@ const { parseClaudeUsage } = require("../src/parsers/claudeParser");
 const { parseCodexUsage } = require("../src/parsers/codexParser");
 const { createDefaultState } = require("../src/state/stateStore");
 const { updateServiceState } = require("../src/state/serviceStateUpdater");
+const { selectUsagePageCandidate, serviceUsagePageMatches } = require("../src/extractors/usageExtractor");
 
 const baseConfig = {
   idleMinutesBeforeSummary: 20,
@@ -135,6 +136,28 @@ async function main() {
   const scenarioResults = [];
 
   {
+    const selected = selectUsagePageCandidate([
+      {
+        index: 0,
+        url: "https://chatgpt.com/codex/cloud/settings/analytics",
+        title: "Old Codex",
+        matchType: "exact_configured_url",
+        score: 100
+      },
+      {
+        index: 1,
+        url: "https://chatgpt.com/codex/cloud/settings/analytics",
+        title: "Current Codex",
+        matchType: "exact_configured_url",
+        score: 100
+      }
+    ]);
+    assert(selected.index === 1, "Source selection should prefer the later equally scored matching tab.");
+    assert(serviceUsagePageMatches({ key: "codex", usageUrl: "https://chatgpt.com/codex/cloud/settings/analytics#usage" }, "https://claude.ai/settings/usage") === false, "Codex source selection must reject Claude tabs.");
+    scenarioResults.push("Source selection prefers fresher matching provider tab");
+  }
+
+  {
     const events = detect(
       makeServiceState({ remainingShortWindowPercent: 70, remainingWeeklyPercent: 95 }),
       makeServiceState({ remainingShortWindowPercent: 100, remainingWeeklyPercent: 95 }),
@@ -189,12 +212,12 @@ async function main() {
     const parseResult = parseCodexUsage({
       serviceKey: "codex",
       serviceName: "Codex",
-      bodyText: "Codex usage\n5-hour usage limit\n99% remaining\nWeekly usage limit\n69% remaining",
+      bodyText: "Codex usage\n5-hour usage limit\n85% remaining\nWeekly usage limit\n51% remaining",
       candidateLines: [
         "5-hour usage limit",
-        "99% remaining",
+        "85% remaining",
         "Weekly usage limit",
-        "69% remaining"
+        "51% remaining"
       ],
       domCandidates: [],
       accessibilityCandidates: [],
@@ -202,25 +225,25 @@ async function main() {
       loginState: { loginLikely: false, textLooksUsage: true },
       turnstileState: { turnstileLikely: false }
     });
-    assert(parseResult.remainingShortWindowPercent === 99, "Codex 5-hour remaining should parse as short remaining 99.");
-    assert(parseResult.remainingWeeklyPercent === 69, "Codex weekly remaining should parse as weekly remaining 69.");
-    assert(parseResult.usedShortWindowPercent === 1, "Codex short used should derive to 1.");
-    assert(parseResult.usedWeeklyPercent === 31, "Codex weekly used should derive to 31.");
+    assert(parseResult.remainingShortWindowPercent === 85, "Codex 5-hour remaining should parse as short remaining 85.");
+    assert(parseResult.remainingWeeklyPercent === 51, "Codex weekly remaining should parse as weekly remaining 51.");
+    assert(parseResult.usedShortWindowPercent === 15, "Codex short used should derive to 15.");
+    assert(parseResult.usedWeeklyPercent === 49, "Codex weekly used should derive to 49.");
     assert(parseResult.rawShortWindowMeaning === "remaining", "Codex short meaning should be remaining.");
     assert(parseResult.rawWeeklyPercentMeaning === "remaining", "Codex weekly meaning should be remaining.");
-    scenarioResults.push("Codex observed mismatch fixture maps short 99 and weekly 69 remaining");
+    scenarioResults.push("Codex latest screenshot fixture maps short 85 and weekly 51 remaining");
   }
 
   {
     const parseResult = parseClaudeUsage({
       serviceKey: "claude",
       serviceName: "Claude",
-      bodyText: "Claude usage\nCurrent session\n67% used\nAll models\n4% used",
+      bodyText: "Claude usage\nCurrent session\n50% used\nAll models\n7% used",
       candidateLines: [
         "Current session",
-        "67% used",
+        "50% used",
         "All models",
-        "4% used"
+        "7% used"
       ],
       domCandidates: [],
       accessibilityCandidates: [],
@@ -228,13 +251,13 @@ async function main() {
       loginState: { loginLikely: false, textLooksUsage: true },
       turnstileState: { turnstileLikely: false }
     });
-    assert(parseResult.usedShortWindowPercent === 67, "Claude current session should parse as short used 67.");
-    assert(parseResult.usedWeeklyPercent === 4, "Claude all-models should parse as weekly/all-models used 4.");
-    assert(parseResult.remainingShortWindowPercent === 33, "Claude current session used 67 should derive remaining 33.");
-    assert(parseResult.remainingWeeklyPercent === 96, "Claude all-models used 4 should derive remaining 96.");
+    assert(parseResult.usedShortWindowPercent === 50, "Claude current session should parse as short used 50.");
+    assert(parseResult.usedWeeklyPercent === 7, "Claude all-models should parse as weekly/all-models used 7.");
+    assert(parseResult.remainingShortWindowPercent === 50, "Claude current session used 50 should derive remaining 50.");
+    assert(parseResult.remainingWeeklyPercent === 93, "Claude all-models used 7 should derive remaining 93.");
     assert(parseResult.rawShortWindowMeaning === "used", "Claude short meaning should be used.");
     assert(parseResult.rawWeeklyPercentMeaning === "used", "Claude weekly meaning should be used.");
-    scenarioResults.push("Claude observed mismatch fixture maps current session 67 used and all-models 4 used");
+    scenarioResults.push("Claude latest screenshot fixture maps current session 50 used and all-models 7 used");
   }
 
   {
@@ -665,6 +688,39 @@ async function main() {
     });
     assert(usageLine === null, "Discord usage line should omit Claude when remaining values are missing.");
     scenarioResults.push("Missing Claude usage stays unavailable, not 100");
+  }
+
+  {
+    const state = createDefaultState();
+    state.services.codex.remainingShortWindowPercent = 85;
+    state.services.codex.remainingWeeklyPercent = 51;
+    state.services.codex.lastCheckedAt = "2026-05-27T10:00:00.000Z";
+    state.services.codex.lastSuccessfulCheckedAt = "2026-05-27T10:00:00.000Z";
+    updateServiceState(state, {
+      serviceKey: "codex",
+      ok: false,
+      shortWindowPercent: null,
+      weeklyPercent: null,
+      rawShortWindowPercent: null,
+      rawWeeklyPercent: null,
+      rawShortWindowMeaning: "unknown",
+      rawWeeklyPercentMeaning: "unknown",
+      remainingShortWindowPercent: null,
+      remainingWeeklyPercent: null,
+      usedShortWindowPercent: null,
+      usedWeeklyPercent: null,
+      errorReason: "parser_low_confidence"
+    });
+    assert(state.services.codex.remainingShortWindowPercent === 85, "Failed parse should preserve previous short remaining.");
+    assert(state.services.codex.remainingWeeklyPercent === 51, "Failed parse should preserve previous weekly remaining.");
+    assert(state.services.codex.lastCheckedAt === "2026-05-27T10:00:00.000Z", "Failed parse must not advance lastCheckedAt.");
+    assert(state.services.codex.lastSuccessfulCheckedAt === "2026-05-27T10:00:00.000Z", "Failed parse must not advance lastSuccessfulCheckedAt.");
+    assert(Boolean(state.services.codex.lastAttemptedAt), "Failed parse should record lastAttemptedAt.");
+    const usageLine = require("../src/notifications/messages").formatUsageLine({
+      codex: state.services.codex
+    });
+    assert(usageLine === null, "Discord usage line should omit stale provider values.");
+    scenarioResults.push("Failed parse preserves values but marks provider stale");
   }
 
   console.log(JSON.stringify({ ok: true, scenarios: scenarioResults }, null, 2));

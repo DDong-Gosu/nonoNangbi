@@ -43,6 +43,10 @@ function servicePercent(service, shortKeys, weeklyKeys) {
     return null;
   }
 
+  if (Number(service.failures || service.consecutiveParseFailures || 0) > 0 || service.stale === true) {
+    return null;
+  }
+
   let short = null;
   let weekly = null;
 

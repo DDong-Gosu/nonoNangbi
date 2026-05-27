@@ -5,6 +5,7 @@ const {
   makeParseResult,
   pickBestPercent,
   remainingFromRaw,
+  safeCandidateContext,
   usedFromRaw
 } = require("./common");
 
@@ -89,6 +90,10 @@ function parseCodexUsage(extraction) {
     weeklyWindowLabel: rawWeeklyPercent !== null ? "weekly remaining" : null,
     parseMethod: "codex_label_heuristic",
     parseConfidence: bothLabeled ? "high" : oneLabeled ? "medium" : "low",
+    selectedCandidates: {
+      shortWindow: safeCandidateContext(shortCandidate),
+      weekly: safeCandidateContext(weeklyCandidate)
+    },
     errorReason: null
   });
 }

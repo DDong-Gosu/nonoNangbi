@@ -69,6 +69,11 @@ struct MongiStatus: Codable, Sendable {
         var weeklyResetAt: String?
         var failures: Int?
         var lastCheckedAt: String?
+        var lastAttemptedAt: String?
+        var lastSuccessfulCheckedAt: String?
+        var lastParseFailedAt: String?
+        var lastParseFailureReason: String?
+        var stale: Bool?
     }
 
     struct Today: Codable, Sendable {

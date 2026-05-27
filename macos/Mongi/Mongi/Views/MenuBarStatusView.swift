@@ -109,9 +109,13 @@ struct MenuBarStatusView: View {
     private func providerStatusBadge(usage: MongiStatus.ServiceUsage?) -> some View {
         Group {
             if let failures = usage?.failures, failures > 0 {
-                Text("\(failures)회 파싱 실패")
+                Text("확인 필요 · \(failures)회 실패")
                     .font(.caption2.weight(.medium))
                     .foregroundStyle(.red)
+            } else if usage?.stale == true {
+                Text("확인 필요")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.orange)
             } else if usage?.shortRemaining == nil && usage?.weeklyRemaining == nil {
                 Text("확인 안 됨")
                     .font(.caption2.weight(.medium))

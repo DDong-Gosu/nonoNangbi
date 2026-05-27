@@ -35,6 +35,7 @@ function writeDiagnostics(service, extraction, parseResult) {
     finalUrl: extraction.finalUrl,
     extractedAt: extraction.extractedAt,
     navigationStatus: extraction.navigationStatus,
+    source: extraction.source || null,
     loginState: extraction.loginState,
     turnstileState: extraction.turnstileState,
     error: extraction.error,
@@ -59,6 +60,8 @@ function writeDiagnostics(service, extraction, parseResult) {
       weeklyWindowLabel: parseResult.weeklyWindowLabel,
       parseMethod: parseResult.parseMethod,
       parseConfidence: parseResult.parseConfidence,
+      parsedAt: parseResult.parsedAt,
+      selectedCandidates: parseResult.selectedCandidates,
       errorReason: parseResult.errorReason
     }
   };
@@ -111,6 +114,8 @@ async function main() {
         usedShortWindowPercent: parseResult.usedShortWindowPercent,
         usedWeeklyPercent: parseResult.usedWeeklyPercent,
         errorReason: parseResult.errorReason,
+        source: extraction.source,
+        selectedCandidates: parseResult.selectedCandidates,
         percentCount: extraction.percentTokens.length,
         candidateLineCount: extraction.candidateLines.length,
         artifacts

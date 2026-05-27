@@ -71,7 +71,8 @@ async function runService(context, service) {
     usedShortWindowPercent: parseResult.usedShortWindowPercent,
     usedWeeklyPercent: parseResult.usedWeeklyPercent,
     errorReason: parseResult.errorReason,
-    navigationStatus: extraction.navigationStatus
+    navigationStatus: extraction.navigationStatus,
+    source: extraction.source
   });
 
   return {

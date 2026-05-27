@@ -5,6 +5,7 @@ const {
   makeParseResult,
   pickBestPercent,
   remainingFromRaw,
+  safeCandidateContext,
   usedFromRaw
 } = require("./common");
 
@@ -93,6 +94,10 @@ function parseClaudeUsage(extraction) {
     weeklyWindowLabel: rawWeeklyPercent !== null ? "all-models used" : null,
     parseMethod: "claude_label_heuristic",
     parseConfidence: bothLabeled ? "high" : oneLabeled ? "medium" : "low",
+    selectedCandidates: {
+      shortWindow: safeCandidateContext(shortCandidate),
+      weekly: safeCandidateContext(weeklyCandidate)
+    },
     errorReason: null
   });
 }

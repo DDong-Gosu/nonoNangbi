@@ -324,9 +324,18 @@ function serviceUsage(state, serviceKey) {
       shortResetAt: null,
       weeklyResetAt: null,
       failures: null,
-      lastCheckedAt: null
+      lastCheckedAt: null,
+      lastAttemptedAt: null,
+      lastSuccessfulCheckedAt: null,
+      lastParseFailedAt: null,
+      lastParseFailureReason: null,
+      stale: true,
+      source: null
     };
   }
+
+  const failures = Number(service.consecutiveParseFailures || 0);
+  const lastSuccessfulCheckedAt = service.lastSuccessfulCheckedAt || (failures > 0 ? null : service.lastCheckedAt || null);
 
   return {
     shortRemaining: service.remainingShortWindowPercent,
@@ -339,8 +348,14 @@ function serviceUsage(state, serviceKey) {
     weeklyLabel: service.weeklyWindowLabel || null,
     shortResetAt: service.shortResetAt || service.shortWindowResetAt || null,
     weeklyResetAt: service.weeklyResetAt || service.weeklyWindowResetAt || null,
-    failures: Number(service.consecutiveParseFailures || 0),
-    lastCheckedAt: service.lastCheckedAt || null
+    failures,
+    lastCheckedAt: lastSuccessfulCheckedAt,
+    lastAttemptedAt: service.lastAttemptedAt || service.lastCheckedAt || null,
+    lastSuccessfulCheckedAt,
+    lastParseFailedAt: service.lastParseFailedAt || service.lastParseFailureAt || null,
+    lastParseFailureReason: service.lastParseFailureReason || null,
+    stale: failures > 0 || !lastSuccessfulCheckedAt,
+    source: service.source || null
   };
 }
 
@@ -584,24 +599,30 @@ async function buildStatus() {
   };
 }
 
-buildStatus()
-  .then((status) => {
-    process.stdout.write(`${JSON.stringify(status, null, 2)}\n`);
-  })
-  .catch((error) => {
-    const status = {
-      generatedAt: new Date().toISOString(),
-      overallStatus: "error",
-      nextAction: "Inspect status-json failure and rerun npm run status:json.",
-      health: {},
-      output: null,
-      usage: {},
-      today: {},
-      policy: {},
-      warnings: [`status-json failed: ${error.message}`],
-      historyWarnings: [],
-      statusMeta: null
-    };
-    process.stdout.write(`${JSON.stringify(status, null, 2)}\n`);
-    process.exit(1);
-  });
+if (require.main === module) {
+  buildStatus()
+    .then((status) => {
+      process.stdout.write(`${JSON.stringify(status, null, 2)}\n`);
+    })
+    .catch((error) => {
+      const status = {
+        generatedAt: new Date().toISOString(),
+        overallStatus: "error",
+        nextAction: "Inspect status-json failure and rerun npm run status:json.",
+        health: {},
+        output: null,
+        usage: {},
+        today: {},
+        policy: {},
+        warnings: [`status-json failed: ${error.message}`],
+        historyWarnings: [],
+        statusMeta: null
+      };
+      process.stdout.write(`${JSON.stringify(status, null, 2)}\n`);
+      process.exit(1);
+    });
+}
+
+module.exports = {
+  buildStatus
+};

@@ -26,6 +26,7 @@
     "value:review": "node scripts/value-review.js",
     "verify:local": "bash scripts/verify-local-automation.sh",
     "verify:local:safe": "bash scripts/verify-local-safe.sh",
+    "verify:usage-source": "node scripts/verify-usage-source.js",
     "build:app": "bash scripts/build-mongi-app.sh",
     "compile:app": "bash scripts/compile-and-run-mongi.sh",
     "package:app": "bash scripts/package-mongi-app.sh",

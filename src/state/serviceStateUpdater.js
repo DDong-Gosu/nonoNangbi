@@ -9,6 +9,7 @@ function updateServiceState(state, parseResult) {
   }
 
   if (parseResult.ok) {
+    current.lastAttemptedAt = checkedAt;
     current.lastShortWindowPercent = current.shortWindowPercent;
     current.lastWeeklyPercent = current.weeklyPercent;
     current.lastRemainingShortWindowPercent = current.remainingShortWindowPercent;
@@ -59,16 +60,21 @@ function updateServiceState(state, parseResult) {
     }
 
     current.lastCheckedAt = checkedAt;
+    current.lastSuccessfulCheckedAt = checkedAt;
     current.consecutiveParseFailures = 0;
     current.lastParseFailureAt = null;
+    current.lastParseFailedAt = null;
     current.lastParseFailureReason = null;
+    current.source = parseResult.source || null;
     return;
   }
 
-  current.lastCheckedAt = checkedAt;
+  current.lastAttemptedAt = checkedAt;
   current.consecutiveParseFailures = Number(current.consecutiveParseFailures || 0) + 1;
   current.lastParseFailureAt = checkedAt;
+  current.lastParseFailedAt = checkedAt;
   current.lastParseFailureReason = parseResult.errorReason;
+  current.source = parseResult.source || current.source || null;
 }
 
 function applyInternalEventState(state, events, now = new Date()) {
