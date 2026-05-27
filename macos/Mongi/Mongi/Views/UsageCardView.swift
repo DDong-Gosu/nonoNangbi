@@ -1,3 +1,4 @@
+import MongiCore
 import SwiftUI
 
 struct UsageCardView: View {
@@ -7,32 +8,22 @@ struct UsageCardView: View {
     var body: some View {
         GroupBox(title) {
             VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .firstTextBaseline, spacing: 18) {
-                    remainingBlock("Short remaining", usage?.shortRemaining)
-                    remainingBlock("Weekly remaining", usage?.weeklyRemaining)
-                    Spacer()
-                }
+                UsageMeterView(label: "Short remaining", value: usage?.shortRemaining)
+                UsageMeterView(label: "Weekly remaining", value: usage?.weeklyRemaining)
 
                 Divider()
 
+                metric("Short used", StatusDisplayFormatter.percentText(usage?.shortUsed))
+                metric("Weekly used", StatusDisplayFormatter.percentText(usage?.weeklyUsed))
+                metric("Short reset", StatusDisplayFormatter.resetCountdown(resetAt: usage?.shortResetAt))
+                metric("Weekly reset", StatusDisplayFormatter.resetCountdown(resetAt: usage?.weeklyResetAt))
                 metric("Failures", numberText(usage?.failures))
-                metric("Last checked", usage?.lastCheckedAt ?? "unknown")
+                metric("Last checked", StatusDisplayFormatter.compactTime(usage?.lastCheckedAt))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 4)
         }
         .frame(maxWidth: .infinity)
-    }
-
-    private func remainingBlock(_ label: String, _ value: Int?) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(percentText(value))
-                .font(.title2.weight(.semibold))
-                .foregroundStyle(percentColor(value))
-        }
     }
 
     private func metric(_ label: String, _ value: String) -> some View {
@@ -46,35 +37,11 @@ struct UsageCardView: View {
         }
     }
 
-    private func percentText(_ value: Int?) -> String {
-        guard let value else {
-            return "unknown"
-        }
-
-        return "\(value)%"
-    }
-
     private func numberText(_ value: Int?) -> String {
         guard let value else {
             return "unknown"
         }
 
         return String(value)
-    }
-
-    private func percentColor(_ value: Int?) -> Color {
-        guard let value else {
-            return .secondary
-        }
-
-        if value >= 70 {
-            return .green
-        }
-
-        if value >= 30 {
-            return .orange
-        }
-
-        return .red
     }
 }

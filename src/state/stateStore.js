@@ -3,6 +3,7 @@ const path = require("path");
 
 const logger = require("../utils/logger");
 const { timestampForFilename } = require("../utils/time");
+const { createOutputStatusResult } = require("../output/gitOutputStatus");
 
 const SCHEMA_VERSION = 1;
 
@@ -18,8 +19,14 @@ function createServiceState() {
     rawWeeklyPercentMeaning: "unknown",
     remainingShortWindowPercent: null,
     remainingWeeklyPercent: null,
+    usedShortWindowPercent: null,
+    usedWeeklyPercent: null,
     lastRemainingShortWindowPercent: null,
     lastRemainingWeeklyPercent: null,
+    lastUsedShortWindowPercent: null,
+    lastUsedWeeklyPercent: null,
+    shortWindowLabel: null,
+    weeklyWindowLabel: null,
     lastCheckedAt: null,
     lastChangedAt: null,
     sessionSummarySent: false,
@@ -39,6 +46,7 @@ function createDefaultState() {
       codex: createServiceState(),
       claude: createServiceState()
     },
+    output: createOutputStatusResult(),
     meta: {}
   };
 }
@@ -77,12 +85,37 @@ function normalizeState(state) {
       codex,
       claude
     },
+    output: normalizeOutputState(state.output, defaultState.output),
     meta: state.meta && typeof state.meta === "object" && !Array.isArray(state.meta) ? state.meta : {}
   };
 
   normalized.meta.lastCdpUnreachableDigestAt = normalized.meta.lastCdpUnreachableDigestAt || null;
 
   return normalized;
+}
+
+function normalizeOutputState(outputState, defaultOutputState) {
+  const output = {
+    ...defaultOutputState,
+    ...(outputState || {})
+  };
+
+  output.repository = {
+    ...defaultOutputState.repository,
+    ...(output.repository || {})
+  };
+
+  output.details = {
+    ...defaultOutputState.details,
+    ...(output.details || {})
+  };
+
+  if (!["NO_OUTPUT", "LOCAL_ONLY", "SHIPPED"].includes(output.outputStatus)) {
+    output.outputStatus = "NO_OUTPUT";
+    output.reason = "invalid_output_status_normalized";
+  }
+
+  return output;
 }
 
 function normalizeMeaning(value) {
@@ -114,6 +147,30 @@ function normalizeServiceState(serviceState, defaultServiceState) {
 
   if (service.lastRemainingWeeklyPercent === undefined) {
     service.lastRemainingWeeklyPercent = null;
+  }
+
+  if (service.usedShortWindowPercent === undefined) {
+    service.usedShortWindowPercent = null;
+  }
+
+  if (service.usedWeeklyPercent === undefined) {
+    service.usedWeeklyPercent = null;
+  }
+
+  if (service.lastUsedShortWindowPercent === undefined) {
+    service.lastUsedShortWindowPercent = null;
+  }
+
+  if (service.lastUsedWeeklyPercent === undefined) {
+    service.lastUsedWeeklyPercent = null;
+  }
+
+  if (service.shortWindowLabel === undefined) {
+    service.shortWindowLabel = null;
+  }
+
+  if (service.weeklyWindowLabel === undefined) {
+    service.weeklyWindowLabel = null;
   }
 
   return service;

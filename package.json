@@ -6,6 +6,7 @@
   "main": "src/monitor.js",
   "scripts": {
     "test:discord": "node scripts/test-discord.js",
+    "notify:start": "node scripts/notify-start.js",
     "test:state": "node scripts/test-state.js",
     "test:scenarios": "node scripts/test-scenarios.js",
     "login": "node scripts/login.js",
@@ -26,6 +27,8 @@
     "verify:local": "bash scripts/verify-local-automation.sh",
     "verify:local:safe": "bash scripts/verify-local-safe.sh",
     "build:app": "bash scripts/build-mongi-app.sh",
+    "compile:app": "bash scripts/compile-and-run-mongi.sh",
+    "package:app": "bash scripts/package-mongi-app.sh",
     "open:app": "bash scripts/open-mongi-app.sh",
     "debug:page-text": "node scripts/debug-page-text.js",
     "debug:codex": "node scripts/debug-page-text.js codex",

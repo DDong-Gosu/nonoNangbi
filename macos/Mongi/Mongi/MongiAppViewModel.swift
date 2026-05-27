@@ -1,16 +1,35 @@
 import AppKit
+import MongiCore
 import SwiftUI
 
 @MainActor
 final class MongiAppViewModel: ObservableObject {
+    private static let refreshCadenceDefaultsKey = "mongi.refreshCadence"
+
     @Published var projectRoot = ProjectRootStore.current
     @Published var status: MongiStatus?
     @Published var errorMessage: String?
     @Published var lastRefreshedAt: Date?
+    @Published var refreshCadence: RefreshCadence {
+        didSet {
+            guard refreshCadence != oldValue else { return }
+            UserDefaults.standard.set(refreshCadence.rawValue, forKey: Self.refreshCadenceDefaultsKey)
+            restartBackgroundRefresh()
+        }
+    }
     @Published var commandRecords: [CommandKind: CommandRecord] = Dictionary(
         uniqueKeysWithValues: CommandKind.allCases.map { ($0, CommandRecord()) }
     )
     @Published var selectedOutput: CommandOutput?
+
+    private var backgroundRefreshTask: Task<Void, Never>?
+    private var refreshInFlight = false
+
+    init() {
+        let savedCadence = UserDefaults.standard.string(forKey: Self.refreshCadenceDefaultsKey)
+        refreshCadence = RefreshCadence.validated(rawValue: savedCadence)
+        restartBackgroundRefresh()
+    }
 
     var projectRootExists: Bool {
         ProjectRootStore.exists(projectRoot)
@@ -28,11 +47,15 @@ final class MongiAppViewModel: ObservableObject {
     }
 
     func refreshStatus(showOutput: Bool = false) async {
+        guard !refreshInFlight, !isRunningCommand else { return }
         guard validateProjectRoot(for: .refresh) else { return }
 
-        setCommand(.refresh, status: .running, summary: "Running npm run status:json")
+        refreshInFlight = true
+        defer { refreshInFlight = false }
+
+        setCommand(.refresh, status: .running, summary: "Running quiet usage refresh")
         let service = MongiStatusService(projectRoot: projectRoot)
-        let result = await service.loadStatus()
+        let result = await service.refreshAndLoadStatus()
         let now = Date()
 
         status = result.status ?? status
@@ -109,6 +132,29 @@ final class MongiAppViewModel: ObservableObject {
 
     func clearOutput() {
         selectedOutput = nil
+    }
+
+    private func restartBackgroundRefresh() {
+        backgroundRefreshTask?.cancel()
+        backgroundRefreshTask = nil
+
+        guard let seconds = refreshCadence.intervalSeconds else { return }
+
+        backgroundRefreshTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: UInt64(seconds) * 1_000_000_000)
+                } catch {
+                    return
+                }
+
+                if Task.isCancelled {
+                    return
+                }
+
+                await self?.refreshStatus(showOutput: false)
+            }
+        }
     }
 
     private func runSimpleCommand(_ kind: CommandKind, action: () async -> ShellResult) async {

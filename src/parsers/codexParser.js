@@ -1,32 +1,40 @@
 const {
   findPercentCandidates,
+  inferPercentMeaning,
   inferErrorReason,
   makeParseResult,
   pickBestPercent,
-  remainingFromRaw
+  remainingFromRaw,
+  usedFromRaw
 } = require("./common");
 
 const SHORT_WINDOW_KEYWORDS = [
   "5h",
   "5 h",
+  "5-hour",
   "5 hour",
+  "5시간",
+  "5 시간",
   "five hour",
+  "five-hour",
   "short",
   "window",
-  "hour",
-  "hours",
-  "시간",
+  "5시간 사용",
+  "5-hour usage",
   "단기"
 ];
 
 const WEEKLY_KEYWORDS = [
+  "weekly usage",
+  "weekly limit",
   "weekly",
   "week",
   "7 day",
-  "reset",
+  "7-day",
+  "주간 사용",
+  "주간 한도",
   "주간",
-  "주",
-  "재설정"
+  "주 단위"
 ];
 
 function parseCodexUsage(extraction) {
@@ -53,8 +61,8 @@ function parseCodexUsage(extraction) {
   const fallbackPercent = shortWindowPercent === null && weeklyPercent === null && fallbackCandidate ? fallbackCandidate.percent : null;
   const rawShortWindowPercent = shortWindowPercent !== null ? shortWindowPercent : fallbackPercent;
   const rawWeeklyPercent = weeklyPercent;
-  const rawShortWindowMeaning = rawShortWindowPercent !== null ? "remaining" : "unknown";
-  const rawWeeklyPercentMeaning = rawWeeklyPercent !== null ? "remaining" : "unknown";
+  const rawShortWindowMeaning = rawShortWindowPercent !== null ? inferPercentMeaning(shortCandidate || fallbackCandidate, "remaining") : "unknown";
+  const rawWeeklyPercentMeaning = rawWeeklyPercent !== null ? inferPercentMeaning(weeklyCandidate, "remaining") : "unknown";
   const foundAny = shortWindowPercent !== null || weeklyPercent !== null || fallbackPercent !== null;
 
   if (!foundAny) {
@@ -77,6 +85,10 @@ function parseCodexUsage(extraction) {
     rawWeeklyPercentMeaning,
     remainingShortWindowPercent: remainingFromRaw(rawShortWindowPercent, rawShortWindowMeaning),
     remainingWeeklyPercent: remainingFromRaw(rawWeeklyPercent, rawWeeklyPercentMeaning),
+    usedShortWindowPercent: usedFromRaw(rawShortWindowPercent, rawShortWindowMeaning),
+    usedWeeklyPercent: usedFromRaw(rawWeeklyPercent, rawWeeklyPercentMeaning),
+    shortWindowLabel: rawShortWindowPercent !== null ? "5-hour remaining" : null,
+    weeklyWindowLabel: rawWeeklyPercent !== null ? "weekly remaining" : null,
     parseMethod: "codex_label_heuristic",
     parseConfidence: bothLabeled ? "high" : oneLabeled ? "medium" : "low",
     errorReason: null

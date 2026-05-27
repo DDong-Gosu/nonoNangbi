@@ -3,6 +3,7 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 
 const { loadConfig } = require("../src/config");
+const { getGitOutputStatus } = require("../src/output/gitOutputStatus");
 const { loadPolicy, summarizePolicy } = require("../src/policy/policyStore");
 
 const PROJECT_ROOT = path.resolve(__dirname, "..");
@@ -314,6 +315,14 @@ function serviceUsage(state, serviceKey) {
     return {
       shortRemaining: null,
       weeklyRemaining: null,
+      shortUsed: null,
+      weeklyUsed: null,
+      shortMeaning: "unknown",
+      weeklyMeaning: "unknown",
+      shortLabel: null,
+      weeklyLabel: null,
+      shortResetAt: null,
+      weeklyResetAt: null,
       failures: null,
       lastCheckedAt: null
     };
@@ -322,6 +331,14 @@ function serviceUsage(state, serviceKey) {
   return {
     shortRemaining: service.remainingShortWindowPercent,
     weeklyRemaining: service.remainingWeeklyPercent,
+    shortUsed: service.usedShortWindowPercent,
+    weeklyUsed: service.usedWeeklyPercent,
+    shortMeaning: service.rawShortWindowMeaning || "unknown",
+    weeklyMeaning: service.rawWeeklyPercentMeaning || "unknown",
+    shortLabel: service.shortWindowLabel || null,
+    weeklyLabel: service.weeklyWindowLabel || null,
+    shortResetAt: service.shortResetAt || service.shortWindowResetAt || null,
+    weeklyResetAt: service.weeklyResetAt || service.weeklyWindowResetAt || null,
     failures: Number(service.consecutiveParseFailures || 0),
     lastCheckedAt: service.lastCheckedAt || null
   };
@@ -432,6 +449,11 @@ async function buildStatus() {
     ? Math.round((Date.now() - latestFailureTs.getTime()) / 60000)
     : null;
   const quietActive = quietHoursActive(policy.quietHours);
+  const output = getGitOutputStatus({
+    cwd: PROJECT_ROOT,
+    now: new Date(generatedAt),
+    quietHoursActive: quietActive
+  });
   const completed = summarizeCompletedRuns(outLines, todayKey, policy.quietHours);
   const latestFinished = latestMatch(outLines, /^\[(.+)] Mongi monitor wrapper finished with exit code (\d+)\./);
   const latestSummary = latestCompletedSummary(outLines);
@@ -530,6 +552,7 @@ async function buildStatus() {
       launchdLoaded: loaded,
       quietHoursActive: quietActive
     },
+    output,
     usage: {
       codex: serviceUsage(state, "codex"),
       claude: serviceUsage(state, "claude")
@@ -571,6 +594,7 @@ buildStatus()
       overallStatus: "error",
       nextAction: "Inspect status-json failure and rerun npm run status:json.",
       health: {},
+      output: null,
       usage: {},
       today: {},
       policy: {},

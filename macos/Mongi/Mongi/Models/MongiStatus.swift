@@ -5,6 +5,7 @@ struct MongiStatus: Codable, Sendable {
     var overallStatus: String?
     var nextAction: String?
     var health: Health?
+    var output: Output?
     var usage: Usage?
     var today: Today?
     var policy: Policy?
@@ -30,6 +31,24 @@ struct MongiStatus: Codable, Sendable {
         var quietHoursActive: Bool?
     }
 
+    struct Output: Codable, Sendable {
+        var outputStatus: String?
+        var reason: String?
+        var hasLocalChanges: Bool?
+        var hasUnpushedCommits: Bool?
+        var hasShippedToday: Bool?
+        var quietHoursActive: Bool?
+        var checkedAt: String?
+        var repository: Repository?
+    }
+
+    struct Repository: Codable, Sendable {
+        var available: Bool?
+        var root: String?
+        var branch: String?
+        var upstream: String?
+    }
+
     struct Usage: Codable, Sendable {
         var codex: ServiceUsage?
         var claude: ServiceUsage?
@@ -38,6 +57,14 @@ struct MongiStatus: Codable, Sendable {
     struct ServiceUsage: Codable, Sendable {
         var shortRemaining: Int?
         var weeklyRemaining: Int?
+        var shortUsed: Int?
+        var weeklyUsed: Int?
+        var shortMeaning: String?
+        var weeklyMeaning: String?
+        var shortLabel: String?
+        var weeklyLabel: String?
+        var shortResetAt: String?
+        var weeklyResetAt: String?
         var failures: Int?
         var lastCheckedAt: String?
     }

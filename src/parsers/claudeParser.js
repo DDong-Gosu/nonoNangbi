@@ -1,34 +1,44 @@
 const {
   findPercentCandidates,
+  inferPercentMeaning,
   inferErrorReason,
   makeParseResult,
   pickBestPercent,
-  remainingFromRaw
+  remainingFromRaw,
+  usedFromRaw
 } = require("./common");
 
 const SHORT_WINDOW_KEYWORDS = [
+  "current session",
+  "session",
+  "현재 세션",
+  "현재 사용량",
+  "현재",
+  "세션",
   "5h",
   "5 h",
+  "5-hour",
   "5 hour",
   "five hour",
-  "hour",
-  "hours",
-  "remaining",
-  "limit",
-  "시간",
-  "남음",
-  "한도"
+  "5시간",
+  "단기"
 ];
 
 const WEEKLY_KEYWORDS = [
+  "all models",
+  "all-models",
+  "all model",
+  "models",
+  "model usage",
+  "모든 모델",
+  "전체 모델",
+  "모델",
+  "weekly usage",
   "weekly",
   "week",
-  "reset",
   "claude code",
   "주간",
-  "주",
-  "재설정",
-  "사용량"
+  "주 단위"
 ];
 
 function parseClaudeUsage(extraction) {
@@ -55,8 +65,8 @@ function parseClaudeUsage(extraction) {
   const fallbackPercent = shortWindowPercent === null && weeklyPercent === null && fallbackCandidate ? fallbackCandidate.percent : null;
   const rawShortWindowPercent = shortWindowPercent !== null ? shortWindowPercent : fallbackPercent;
   const rawWeeklyPercent = weeklyPercent;
-  const rawShortWindowMeaning = rawShortWindowPercent !== null ? "used" : "unknown";
-  const rawWeeklyPercentMeaning = rawWeeklyPercent !== null ? "used" : "unknown";
+  const rawShortWindowMeaning = rawShortWindowPercent !== null ? inferPercentMeaning(shortCandidate || fallbackCandidate, "used") : "unknown";
+  const rawWeeklyPercentMeaning = rawWeeklyPercent !== null ? inferPercentMeaning(weeklyCandidate, "used") : "unknown";
   const foundAny = shortWindowPercent !== null || weeklyPercent !== null || fallbackPercent !== null;
 
   if (!foundAny) {
@@ -79,6 +89,10 @@ function parseClaudeUsage(extraction) {
     rawWeeklyPercentMeaning,
     remainingShortWindowPercent: remainingFromRaw(rawShortWindowPercent, rawShortWindowMeaning),
     remainingWeeklyPercent: remainingFromRaw(rawWeeklyPercent, rawWeeklyPercentMeaning),
+    usedShortWindowPercent: usedFromRaw(rawShortWindowPercent, rawShortWindowMeaning),
+    usedWeeklyPercent: usedFromRaw(rawWeeklyPercent, rawWeeklyPercentMeaning),
+    shortWindowLabel: rawShortWindowPercent !== null ? "current session used" : null,
+    weeklyWindowLabel: rawWeeklyPercent !== null ? "all-models used" : null,
     parseMethod: "claude_label_heuristic",
     parseConfidence: bothLabeled ? "high" : oneLabeled ? "medium" : "low",
     errorReason: null

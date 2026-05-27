@@ -3,10 +3,12 @@
 ## 목차
 
 - Mongi란
+- V2 output status
 - V1 구조
 - Quick start
 - Daily workflow
 - SwiftUI/menu bar app
+- V2 usage semantics
 - Safe verification
 - Important commands
 - Troubleshooting
@@ -19,6 +21,20 @@
 Mongi Usage Coach는 Codex와 Claude 유료 사용량이 실제 개발 산출물로 이어지도록 돕는 개인용 로컬 코치다.
 
 Mongi는 Codex/Claude usage page를 주기적으로 읽고, 사용량 회복, 주간 방치, 세션 멈춤, 진단 실패를 감지해 필요한 경우 Discord로 작은 다음 행동을 알려준다.
+
+## V2 output status
+
+Mongi V2의 primary status는 Git output 기준이다.
+
+Core status는 세 가지뿐이다.
+
+- `NO_OUTPUT`: shipped 또는 local Git output이 감지되지 않음
+- `LOCAL_ONLY`: local 변경이나 unpushed commit은 있지만 오늘 shipped evidence는 없음
+- `SHIPPED`: 오늘 upstream/remote 기준 shipped evidence가 있음
+
+AI usage는 secondary signal이다. Quiet hours는 modifier이며 core status가 아니다.
+
+Discord 알림도 V2에서는 output status를 먼저 보여준다. 메시지는 3줄 이하이며, AI usage percentage는 있으면 짧게 보조 정보로만 붙는다. Quiet hours는 알림 전송 여부에만 영향을 주고 core status를 바꾸지 않는다.
 
 ## V1 구조
 
@@ -79,10 +95,12 @@ npm run value:review
 
 ## SwiftUI/menu bar app
 
-앱 빌드:
+V2의 기본 사용 흐름은 terminal이 아니라 menu bar app이다.
+
+앱 패키징:
 
 ```bash
-npm run build:app
+npm run package:app
 ```
 
 앱 열기:
@@ -91,9 +109,22 @@ npm run build:app
 npm run open:app
 ```
 
+개발 중 컴파일 후 바로 실행:
+
+```bash
+npm run compile:app
+```
+
+패키징 결과물은 기본적으로 `dist/Release/Mongi.app`에 생성된다. 이 앱을 열면 menu bar에 Mongi가 나타나고, popover에서 output status, usage, refresh cadence를 확인한다.
+
 앱에서 가능한 작업:
 
-- 상태 새로고침: `npm run status:json`
+- 상태 새로고침: `npm run monitor -- --dry-run-notifications` 후 `npm run status:json`
+- popover 열 때 상태 자동 새로고침
+- refresh cadence 선택: manual, 5m, 10m, 15m
+- background refresh는 조용히 상태만 갱신하며 매번 Discord 알림을 보내지 않음
+- menu bar popover는 output status를 primary signal로 보여주고, Codex/Claude short/weekly remaining bar는 secondary signal로 보여줌
+- reset countdown은 reset 시간이 있으면 표시하고, 없으면 compact unavailable 상태로 표시함
 - CDP Chrome 시작: `npm run start:chrome`
 - health 확인: `npm run health`
 - Daily Summary 확인: `npm run daily:summary`
@@ -101,6 +132,21 @@ npm run open:app
 - project root 선택 또는 reset
 
 앱은 Node core를 재작성하지 않는다. 기존 npm scripts를 실행하고 결과를 보여주는 로컬 wrapper다.
+
+CLI 명령은 개발, 디버깅, 검증용이다. 정상 사용자는 TUI나 terminal dashboard를 열 필요가 없다.
+
+## V2 usage semantics
+
+Menu bar usage 값은 기본적으로 remaining percentage다.
+
+- Codex Short: 5-hour usage window의 remaining
+- Codex Weekly: weekly usage window의 remaining
+- Claude Short: current session used 값을 읽고 remaining으로 변환
+- Claude Weekly: all-models 또는 weekly used 값을 읽고 remaining으로 변환
+
+Popover의 usage bar는 remaining을 표시한다. Used 값은 보조 metadata로만 표시한다.
+
+최신 값이 필요하면 refresh를 실행한다. Last refreshed와 각 provider의 last checked 시간이 stale data 여부를 확인하는 기준이다.
 
 ## Safe verification
 

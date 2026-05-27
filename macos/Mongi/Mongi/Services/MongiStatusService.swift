@@ -13,6 +13,32 @@ struct MongiStatusService: Sendable {
         ShellRunner(workingDirectory: projectRoot)
     }
 
+    func refreshAndLoadStatus() async -> StatusLoadResult {
+        let refreshResult = await runner.run(
+            ShellRunner.npmCommand("monitor -- --dry-run-notifications"),
+            description: "npm run monitor -- --dry-run-notifications"
+        )
+        let statusResult = await loadStatus()
+
+        if refreshResult.succeeded {
+            return statusResult
+        }
+
+        if statusResult.status != nil {
+            return StatusLoadResult(
+                status: statusResult.status,
+                command: refreshResult,
+                errorMessage: refreshResult.errorSummary ?? "Quiet usage refresh failed; showing last saved status."
+            )
+        }
+
+        return StatusLoadResult(
+            status: nil,
+            command: refreshResult,
+            errorMessage: refreshResult.errorSummary ?? "Quiet usage refresh failed."
+        )
+    }
+
     func loadStatus() async -> StatusLoadResult {
         let result = await runner.run(ShellRunner.npmCommand("status:json"), description: "npm run status:json")
 

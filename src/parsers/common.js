@@ -96,6 +96,10 @@ function makeParseResult(extraction, overrides = {}) {
     rawWeeklyPercentMeaning: "unknown",
     remainingShortWindowPercent: null,
     remainingWeeklyPercent: null,
+    usedShortWindowPercent: null,
+    usedWeeklyPercent: null,
+    shortWindowLabel: null,
+    weeklyWindowLabel: null,
     parseMethod: "none",
     parseConfidence: "none",
     rawTextSample: createRawTextSample(extraction.bodyText),
@@ -128,24 +132,37 @@ function findPercentCandidates(extraction, options = {}) {
   lines.forEach((line, index) => {
     const matches = line.match(PERCENT_REGEX) || [];
 
-    matches.forEach((token) => {
+    let match;
+    const regex = new RegExp(PERCENT_REGEX.source, "g");
+
+    while ((match = regex.exec(line)) !== null) {
+      const token = match[0];
       const percent = percentTokenToNumber(token);
 
       if (percent === null) {
-        return;
+        continue;
       }
 
       const start = Math.max(0, index - windowSize);
       const end = Math.min(lines.length, index + windowSize + 1);
       const context = lines.slice(start, end).join(" ");
+      const tokenStart = match.index;
+      const tokenEnd = tokenStart + token.length;
+      const tokenContextStart = Math.max(0, tokenStart - 90);
+      const tokenContextEnd = Math.min(line.length, tokenEnd + 90);
 
       results.push({
         percent,
         token,
         line,
+        previousLine: lines[index - 1] || "",
+        nextLine: lines[index + 1] || "",
+        before: line.slice(0, tokenStart),
+        after: line.slice(tokenEnd),
+        tokenContext: line.slice(tokenContextStart, tokenContextEnd),
         context
       });
-    });
+    }
   });
 
   return results;
@@ -154,11 +171,26 @@ function findPercentCandidates(extraction, options = {}) {
 function scoreCandidate(candidate, keywords) {
   const line = normalizeWhitespace(candidate.line).toLowerCase();
   const context = normalizeWhitespace(candidate.context).toLowerCase();
+  const tokenContext = normalizeWhitespace(candidate.tokenContext || "").toLowerCase();
+  const previousLine = normalizeWhitespace(candidate.previousLine || "").toLowerCase();
+  const nextLine = normalizeWhitespace(candidate.nextLine || "").toLowerCase();
+  const before = normalizeWhitespace(candidate.before || "").toLowerCase();
+  const after = normalizeWhitespace(candidate.after || "").toLowerCase();
+
   return keywords.reduce((score, keyword) => {
     const normalizedKeyword = keyword.toLowerCase();
-    const lineScore = line.includes(normalizedKeyword) ? 2 : 0;
+    const beforeIndex = before.lastIndexOf(normalizedKeyword);
+    const afterIndex = after.indexOf(normalizedKeyword);
+    const beforeDistance = beforeIndex >= 0 ? before.length - beforeIndex : null;
+    const afterDistance = afterIndex >= 0 ? afterIndex : null;
+    const beforeScore = beforeDistance !== null ? Math.max(2, 12 - Math.floor(beforeDistance / 24)) : 0;
+    const afterScore = afterDistance !== null ? Math.max(1, 6 - Math.floor(afterDistance / 24)) : 0;
+    const previousLineScore = previousLine.includes(normalizedKeyword) ? 10 : 0;
+    const nextLineScore = nextLine.includes(normalizedKeyword) ? 4 : 0;
+    const tokenScore = tokenContext.includes(normalizedKeyword) ? 2 : 0;
+    const lineScore = line.includes(normalizedKeyword) ? 1 : 0;
     const contextScore = context.includes(normalizedKeyword) ? 1 : 0;
-    return score + lineScore + contextScore;
+    return score + beforeScore + afterScore + previousLineScore + nextLineScore + tokenScore + lineScore + contextScore;
   }, 0);
 }
 
@@ -172,6 +204,40 @@ function pickBestPercent(candidates, keywords) {
     .sort((a, b) => b.score - a.score);
 
   return scored[0] || null;
+}
+
+function usedFromRaw(rawPercent, meaning) {
+  if (rawPercent === null || rawPercent === undefined) {
+    return null;
+  }
+
+  if (meaning === "used") {
+    return rawPercent;
+  }
+
+  if (meaning === "remaining") {
+    return 100 - rawPercent;
+  }
+
+  return null;
+}
+
+function inferPercentMeaning(candidate, fallback = "unknown") {
+  const text = normalizeWhitespace([
+    candidate && candidate.tokenContext,
+    candidate && candidate.line,
+    candidate && candidate.context
+  ].filter(Boolean).join(" ")).toLowerCase();
+
+  if (/remaining|left|available|남음|남은|남았습니다|잔여|남아/.test(text)) {
+    return "remaining";
+  }
+
+  if (/\bused\b|사용됨|사용한|사용 중|사용량/.test(text)) {
+    return "used";
+  }
+
+  return fallback;
 }
 
 function inferErrorReason(extraction, percentCandidates) {
@@ -206,11 +272,13 @@ module.exports = {
   extractPercentTokens,
   findPercentCandidates,
   getCandidateTexts,
+  inferPercentMeaning,
   inferErrorReason,
   makeParseResult,
   normalizeWhitespace,
   percentTokenToNumber,
   pickBestPercent,
   remainingFromRaw,
-  scoreCandidate
+  scoreCandidate,
+  usedFromRaw
 };

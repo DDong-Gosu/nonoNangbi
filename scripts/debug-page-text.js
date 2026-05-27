@@ -9,6 +9,20 @@ const { closeBrowserResources, getBrowserContext } = require("../src/browser/bro
 
 const LOGS_PATH = path.resolve("logs");
 
+function percentSnippets(lines) {
+  return (lines || [])
+    .filter((line) => /%/.test(line))
+    .map((line) => {
+      const match = String(line).match(/(?:100|[1-9]?\d)(?:\.\d+)?\s*%/);
+      const index = match ? match.index : 0;
+      const start = Math.max(0, index - 90);
+      const end = Math.min(String(line).length, index + 90);
+      return String(line).slice(start, end).replace(/\s+/g, " ").trim();
+    })
+    .filter(Boolean)
+    .slice(0, 20);
+}
+
 function writeDiagnostics(service, extraction, parseResult) {
   fs.mkdirSync(LOGS_PATH, { recursive: true });
 
@@ -25,9 +39,10 @@ function writeDiagnostics(service, extraction, parseResult) {
     turnstileState: extraction.turnstileState,
     error: extraction.error,
     percentTokens: extraction.percentTokens,
-    candidateLines: extraction.candidateLines,
-    domCandidates: extraction.domCandidates,
-    accessibilityCandidates: extraction.accessibilityCandidates,
+    candidateLineCount: (extraction.candidateLines || []).length,
+    domCandidateCount: (extraction.domCandidates || []).length,
+    accessibilityCandidateCount: (extraction.accessibilityCandidates || []).length,
+    percentSnippets: percentSnippets(extraction.candidateLines),
     parseResult: {
       ok: parseResult.ok,
       shortWindowPercent: parseResult.shortWindowPercent,
@@ -38,13 +53,17 @@ function writeDiagnostics(service, extraction, parseResult) {
       rawWeeklyPercentMeaning: parseResult.rawWeeklyPercentMeaning,
       remainingShortWindowPercent: parseResult.remainingShortWindowPercent,
       remainingWeeklyPercent: parseResult.remainingWeeklyPercent,
+      usedShortWindowPercent: parseResult.usedShortWindowPercent,
+      usedWeeklyPercent: parseResult.usedWeeklyPercent,
+      shortWindowLabel: parseResult.shortWindowLabel,
+      weeklyWindowLabel: parseResult.weeklyWindowLabel,
       parseMethod: parseResult.parseMethod,
       parseConfidence: parseResult.parseConfidence,
       errorReason: parseResult.errorReason
     }
   };
 
-  fs.writeFileSync(textPath, `${extraction.bodyText || ""}\n`, "utf8");
+  fs.writeFileSync(textPath, `${summary.percentSnippets.join("\n")}\n`, "utf8");
   fs.writeFileSync(summaryPath, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
 
   return {
@@ -85,8 +104,12 @@ async function main() {
         parseConfidence: parseResult.parseConfidence,
         shortWindowPercentFound: parseResult.shortWindowPercent !== null,
         weeklyPercentFound: parseResult.weeklyPercent !== null,
+        rawShortWindowMeaning: parseResult.rawShortWindowMeaning,
+        rawWeeklyPercentMeaning: parseResult.rawWeeklyPercentMeaning,
         remainingShortWindowPercent: parseResult.remainingShortWindowPercent,
         remainingWeeklyPercent: parseResult.remainingWeeklyPercent,
+        usedShortWindowPercent: parseResult.usedShortWindowPercent,
+        usedWeeklyPercent: parseResult.usedWeeklyPercent,
         errorReason: parseResult.errorReason,
         percentCount: extraction.percentTokens.length,
         candidateLineCount: extraction.candidateLines.length,

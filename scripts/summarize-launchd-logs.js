@@ -93,8 +93,10 @@ function summarizeServices(summary) {
       const status = service.ok ? "ok" : "failed";
       const short = service.remainingShortWindowPercent ?? "unknown";
       const weekly = service.remainingWeeklyPercent ?? "unknown";
+      const shortUsed = service.usedShortWindowPercent ?? "unknown";
+      const weeklyUsed = service.usedWeeklyPercent ?? "unknown";
       const reason = service.errorReason ? `, reason ${service.errorReason}` : "";
-      return `${service.serviceKey}: ${status}, short ${short}, weekly ${weekly}${reason}`;
+      return `${service.serviceKey}: ${status}, short remaining ${short}, weekly remaining ${weekly}, short used ${shortUsed}, weekly used ${weeklyUsed}${reason}`;
     })
     .join("; ");
 }

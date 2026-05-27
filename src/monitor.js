@@ -6,8 +6,9 @@ const { applyInternalEventState, updateServiceState } = require("./state/service
 const { createServices } = require("./services");
 const { extractUsagePage } = require("./extractors/usageExtractor");
 const { closeBrowserResources, getBrowserContext } = require("./browser/browserContext");
-const { detectCdpUnreachableEvent, detectEvents } = require("./events/eventDetector");
+const { detectCdpUnreachableEvent, detectEvents, isQuietHours } = require("./events/eventDetector");
 const { applyNotificationPatches, dispatchNotifications } = require("./notifications/notificationDispatcher");
+const { getGitOutputStatus } = require("./output/gitOutputStatus");
 const { loadPolicy } = require("./policy/policyStore");
 
 function clone(value) {
@@ -34,6 +35,13 @@ function serviceEnabled(config, serviceKey) {
   return !servicePolicy || servicePolicy.enabled !== false;
 }
 
+function usageSnapshot(state) {
+  return {
+    codex: state.services && state.services.codex,
+    claude: state.services && state.services.claude
+  };
+}
+
 async function runService(context, service) {
   const extraction = await extractUsagePage(context, service, {
     reuseExistingPages: true,
@@ -56,8 +64,12 @@ async function runService(context, service) {
     parseConfidence: parseResult.parseConfidence,
     shortWindowPercentFound: parseResult.shortWindowPercent !== null,
     weeklyPercentFound: parseResult.weeklyPercent !== null,
+    rawShortWindowMeaning: parseResult.rawShortWindowMeaning,
+    rawWeeklyPercentMeaning: parseResult.rawWeeklyPercentMeaning,
     remainingShortWindowPercent: parseResult.remainingShortWindowPercent,
     remainingWeeklyPercent: parseResult.remainingWeeklyPercent,
+    usedShortWindowPercent: parseResult.usedShortWindowPercent,
+    usedWeeklyPercent: parseResult.usedWeeklyPercent,
     errorReason: parseResult.errorReason,
     navigationStatus: extraction.navigationStatus
   });
@@ -81,6 +93,11 @@ async function main() {
   const state = loadState(config);
   const services = createServices(config).filter((service) => serviceEnabled(config, service.key));
   const now = new Date();
+  const outputStatus = getGitOutputStatus({
+    cwd: process.cwd(),
+    now,
+    quietHoursActive: isQuietHours(config, now)
+  });
   let browserResources;
   let context;
   const results = [];
@@ -89,6 +106,20 @@ async function main() {
   for (const warning of policyResult.warnings) {
     logger.warn("Policy warning.", { warning });
   }
+
+  state.output = outputStatus;
+  logger.info("Git output status classified.", {
+    outputStatus: outputStatus.outputStatus,
+    reason: outputStatus.reason,
+    repositoryAvailable: outputStatus.repository.available,
+    branch: outputStatus.repository.branch,
+    upstream: outputStatus.repository.upstream,
+    hasLocalChanges: outputStatus.hasLocalChanges,
+    hasUnpushedCommits: outputStatus.hasUnpushedCommits,
+    hasShippedToday: outputStatus.hasShippedToday,
+    quietHoursActive: outputStatus.quietHoursActive,
+    shippedDetectionLimitation: outputStatus.details.shippedDetectionLimitation
+  });
 
   try {
     browserResources = await getBrowserContext(config);
@@ -107,7 +138,7 @@ async function main() {
     }
 
     try {
-      const dispatchResults = await dispatchNotifications({ config, events, now, dryRun, logger });
+      const dispatchResults = await dispatchNotifications({ config, events, now, dryRun, logger, output: outputStatus, usage: usageSnapshot(state) });
       applyNotificationPatches(state, dispatchResults);
     } catch (dispatchError) {
       logger.error(`Diagnostic notification failed: ${dispatchError.message}`, dispatchError);
@@ -176,7 +207,7 @@ async function main() {
 
     if (dispatchableEvents.length > 0) {
       try {
-        dispatchResults = await dispatchNotifications({ config, events: dispatchableEvents, now, dryRun, logger });
+        dispatchResults = await dispatchNotifications({ config, events: dispatchableEvents, now, dryRun, logger, output: outputStatus, usage: usageSnapshot(state) });
         applyNotificationPatches(state, dispatchResults);
       } catch (error) {
         logger.error(`Notification dispatch failed: ${error.message}`, error);
@@ -188,13 +219,25 @@ async function main() {
     saveState(config, state);
 
     logger.info("Monitor run completed.", {
+      output: {
+        outputStatus: outputStatus.outputStatus,
+        reason: outputStatus.reason,
+        hasLocalChanges: outputStatus.hasLocalChanges,
+        hasUnpushedCommits: outputStatus.hasUnpushedCommits,
+        hasShippedToday: outputStatus.hasShippedToday,
+        quietHoursActive: outputStatus.quietHoursActive
+      },
       services: results.map((result) => ({
         serviceKey: result.serviceKey,
         ok: result.ok,
         parseMethod: result.parseMethod,
         parseConfidence: result.parseConfidence,
+        rawShortWindowMeaning: result.rawShortWindowMeaning,
+        rawWeeklyPercentMeaning: result.rawWeeklyPercentMeaning,
         remainingShortWindowPercent: result.remainingShortWindowPercent,
         remainingWeeklyPercent: result.remainingWeeklyPercent,
+        usedShortWindowPercent: result.usedShortWindowPercent,
+        usedWeeklyPercent: result.usedWeeklyPercent,
         errorReason: result.errorReason
       })),
       events: events.map((event) => ({

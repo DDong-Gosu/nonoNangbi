@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run test:scenarios *)",
+      "Bash(npm run status:json *)",
+      "Bash(npm run health *)"
+    ]
+  }
+}

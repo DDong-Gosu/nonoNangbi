@@ -145,6 +145,7 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
 fi
 
 if cdp_reachable; then
+  node scripts/notify-start.js --best-effort >/dev/null 2>&1 || true
   echo "Mongi CDP Chrome is already reachable."
   echo "CDP URL: $CHROME_CDP_URL"
   echo "중복 탭을 피하려고 usage page는 새로 열지 않았습니다."
@@ -180,6 +181,8 @@ if ! wait_for_stable_cdp; then
   echo "Run npm run health, then start Mongi again if needed."
   exit 1
 fi
+
+node scripts/notify-start.js --best-effort >/dev/null 2>&1 || true
 
 echo "Mongi CDP Chrome is ready."
 echo "Codex usage page and Claude usage page were opened."

@@ -1,4 +1,5 @@
 import AppKit
+import MongiCore
 import SwiftUI
 
 struct ContentView: View {
@@ -67,12 +68,26 @@ struct ContentView: View {
                 Text("Generated: \(viewModel.status?.generatedAt ?? "unknown")")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Text("Output: \(viewModel.status?.output?.outputStatus ?? "unknown")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Text("Last refreshed: \(formatDate(viewModel.lastRefreshedAt))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("Cadence: \(viewModel.refreshCadence.label)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
             Spacer()
+
+            Picker("Refresh cadence", selection: $viewModel.refreshCadence) {
+                ForEach(RefreshCadence.allCases) { cadence in
+                    Text(cadence.label).tag(cadence)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 260)
 
             Button {
                 Task { await viewModel.refreshStatus(showOutput: true) }

@@ -8,9 +8,19 @@ let package = Package(
         .macOS(.v14)
     ],
     targets: [
+        .target(
+            name: "MongiCore",
+            path: "MongiCore"
+        ),
         .executableTarget(
             name: "Mongi",
+            dependencies: ["MongiCore"],
             path: "Mongi"
+        ),
+        .testTarget(
+            name: "MongiCoreTests",
+            dependencies: ["MongiCore"],
+            path: "MongiCoreTests"
         )
     ]
 )

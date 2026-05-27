@@ -65,7 +65,7 @@ function patchForSentEvent(event) {
   };
 }
 
-async function dispatchNotifications({ config, events, now = new Date(), dryRun = false, sender = sendDiscordMessage, logger = null }) {
+async function dispatchNotifications({ config, events, now = new Date(), dryRun = false, sender = sendDiscordMessage, logger = null, output = null, usage = null }) {
   const results = [];
   const quiet = isQuietHours(config, now);
 
@@ -103,7 +103,7 @@ async function dispatchNotifications({ config, events, now = new Date(), dryRun 
       continue;
     }
 
-    const message = getEventMessage(event);
+    const message = getEventMessage(event, { output, usage });
 
     if (dryRun) {
       results.push({

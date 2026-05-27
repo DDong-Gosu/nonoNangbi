@@ -3,6 +3,7 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 
 const { loadConfig } = require("../src/config");
+const { getGitOutputStatus } = require("../src/output/gitOutputStatus");
 
 const LABEL = "com.donghoon.mongi-usage-coach";
 const LOG_SIZE_WARNING_BYTES = 5 * 1024 * 1024;
@@ -143,7 +144,7 @@ function printService(name, service) {
     return;
   }
 
-  console.log(`- ${name}: short ${formatValue(service.remainingShortWindowPercent)}, weekly ${formatValue(service.remainingWeeklyPercent)}, failures ${Number(service.consecutiveParseFailures || 0)}, checked ${formatValue(service.lastCheckedAt)}`);
+  console.log(`- ${name}: short remaining ${formatValue(service.remainingShortWindowPercent)}, weekly remaining ${formatValue(service.remainingWeeklyPercent)}, short used ${formatValue(service.usedShortWindowPercent)}, weekly used ${formatValue(service.usedWeeklyPercent)}, failures ${Number(service.consecutiveParseFailures || 0)}, checked ${formatValue(service.lastCheckedAt)}`);
 
   if (Number(service.consecutiveParseFailures || 0) > 0) {
     if (service.lastParseFailureReason === "usage_page_not_open") {
@@ -173,6 +174,11 @@ async function main() {
   const loaded = launchdLoaded();
   const recentLogs = summarizeRecentLogs();
   const quietActive = quietHoursActive(config.quietHours);
+  const output = getGitOutputStatus({
+    cwd: PROJECT_ROOT,
+    now: new Date(),
+    quietHoursActive: quietActive
+  });
   const outLogSize = fileSize(OUT_LOG_PATH);
   const errorLogSize = fileSize(ERROR_LOG_PATH);
   const warnings = [];
@@ -244,6 +250,17 @@ async function main() {
   console.log(`- quiet hours active: ${quietActive ? "yes" : "no"}`);
   console.log(`- quiet hours window: ${config.quietHours.enabled ? `${config.quietHours.startHour}:00-${config.quietHours.endHour}:00` : "disabled"}`);
   console.log(`- recent launchd notifications sent: ${formatValue(recentLogs.notificationsSent)}`);
+  console.log("");
+  console.log("Output:");
+  console.log(`- status: ${output.outputStatus}`);
+  console.log(`- reason: ${output.reason}`);
+  console.log(`- git repository: ${output.repository.available ? "yes" : "no"}`);
+  console.log(`- branch: ${formatValue(output.repository.branch)}`);
+  console.log(`- upstream: ${formatValue(output.repository.upstream)}`);
+  console.log(`- local changes: ${output.hasLocalChanges ? "yes" : "no"}`);
+  console.log(`- unpushed commits: ${output.hasUnpushedCommits ? "yes" : "no"}`);
+  console.log(`- shipped today: ${output.hasShippedToday ? "yes" : "no"}`);
+  console.log(`- quiet hours modifier: ${output.quietHoursActive ? "yes" : "no"}`);
 
   if (warnings.length > 0) {
     console.log("");

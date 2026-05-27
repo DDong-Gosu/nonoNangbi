@@ -13,6 +13,8 @@ function updateServiceState(state, parseResult) {
     current.lastWeeklyPercent = current.weeklyPercent;
     current.lastRemainingShortWindowPercent = current.remainingShortWindowPercent;
     current.lastRemainingWeeklyPercent = current.remainingWeeklyPercent;
+    current.lastUsedShortWindowPercent = current.usedShortWindowPercent;
+    current.lastUsedWeeklyPercent = current.usedWeeklyPercent;
 
     if (parseResult.shortWindowPercent !== null) {
       current.shortWindowPercent = parseResult.shortWindowPercent;
@@ -38,6 +40,22 @@ function updateServiceState(state, parseResult) {
 
     if (parseResult.remainingWeeklyPercent !== null) {
       current.remainingWeeklyPercent = parseResult.remainingWeeklyPercent;
+    }
+
+    if (parseResult.usedShortWindowPercent !== null && parseResult.usedShortWindowPercent !== undefined) {
+      current.usedShortWindowPercent = parseResult.usedShortWindowPercent;
+    }
+
+    if (parseResult.usedWeeklyPercent !== null && parseResult.usedWeeklyPercent !== undefined) {
+      current.usedWeeklyPercent = parseResult.usedWeeklyPercent;
+    }
+
+    if (parseResult.shortWindowLabel) {
+      current.shortWindowLabel = parseResult.shortWindowLabel;
+    }
+
+    if (parseResult.weeklyWindowLabel) {
+      current.weeklyWindowLabel = parseResult.weeklyWindowLabel;
     }
 
     current.lastCheckedAt = checkedAt;

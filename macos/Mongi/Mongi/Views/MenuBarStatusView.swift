@@ -1,4 +1,5 @@
 import AppKit
+import MongiCore
 import SwiftUI
 
 struct MenuBarStatusView: View {
@@ -9,51 +10,73 @@ struct MenuBarStatusView: View {
         VStack(alignment: .leading, spacing: 0) {
             statusHeader
             Divider()
-            healthRow
-            Divider()
-            usageSection
-            Divider()
-            todayRow
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    usageSection
+                    cadenceRow
+                    healthRow
+                    todayRow
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+            }
             Divider()
             actionButtons
             Divider()
             quitRow
         }
-        .frame(width: 300)
+        .frame(width: 340)
+        .onAppear {
+            refreshOnPopoverOpen()
+        }
     }
 
     // MARK: - Header
 
     private var statusHeader: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 8) {
-                Text("Mongi")
-                    .font(.headline)
-                statusBadge(viewModel.status?.overallStatus)
+                Text(viewModel.status?.output?.outputStatus ?? "UNKNOWN")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(outputColor(viewModel.status?.output?.outputStatus))
                 Spacer()
                 if viewModel.commandRecords[.refresh]?.status == .running {
                     ProgressView()
                         .controlSize(.mini)
                 }
             }
-            if let nextAction = viewModel.status?.nextAction {
-                Text(nextAction)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            } else if let errorMessage = viewModel.errorMessage {
+            Text(StatusDisplayFormatter.outputMeaning(viewModel.status?.output?.outputStatus))
+                .font(.caption)
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+            outputDetails
+            if let errorMessage = viewModel.errorMessage {
                 Text(errorMessage)
                     .font(.caption)
                     .foregroundStyle(.red)
                     .lineLimit(2)
-            } else {
-                Text("Loading…")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.vertical, 12)
+        .background(outputColor(viewModel.status?.output?.outputStatus).opacity(0.08))
+    }
+
+    private var outputDetails: some View {
+        HStack(spacing: 8) {
+            if let branch = viewModel.status?.output?.repository?.branch {
+                detailChip("branch \(branch)")
+            }
+            if viewModel.status?.output?.hasLocalChanges == true {
+                detailChip("local changes")
+            }
+            if viewModel.status?.output?.hasUnpushedCommits == true {
+                detailChip("unpushed")
+            }
+            if viewModel.status?.output?.hasShippedToday == true {
+                detailChip("shipped today")
+            }
+        }
     }
 
     // MARK: - Health indicators
@@ -75,40 +98,73 @@ struct MenuBarStatusView: View {
             }
             Spacer()
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 10)
         .padding(.vertical, 8)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var cadenceRow: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack {
+                Text("Refresh")
+                    .font(.caption.weight(.medium))
+                Spacer()
+                Text(refreshMetadata)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Picker("Refresh cadence", selection: $viewModel.refreshCadence) {
+                ForEach(RefreshCadence.allCases) { cadence in
+                    Text(cadence.label).tag(cadence)
+                }
+            }
+            .pickerStyle(.segmented)
+        }
+        .padding(10)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
     }
 
     // MARK: - Usage
 
     private var usageSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            usageRow(name: "Codex", usage: viewModel.status?.usage?.codex)
-            usageRow(name: "Claude", usage: viewModel.status?.usage?.claude)
+        VStack(alignment: .leading, spacing: 10) {
+            providerCard(name: "Codex", usage: viewModel.status?.usage?.codex)
+            providerCard(name: "Claude", usage: viewModel.status?.usage?.claude)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
     }
 
-    private func usageRow(name: String, usage: MongiStatus.ServiceUsage?) -> some View {
-        HStack {
-            Text(name)
-                .font(.caption.weight(.medium))
-                .frame(width: 46, alignment: .leading)
-            Text("Short: \(percentText(usage?.shortRemaining))")
-                .font(.caption)
-                .foregroundStyle(usageColor(usage?.shortRemaining))
-                .frame(width: 80, alignment: .leading)
-            Text("Weekly: \(percentText(usage?.weeklyRemaining))")
-                .font(.caption)
-                .foregroundStyle(usageColor(usage?.weeklyRemaining))
-            Spacer()
-            if let failures = usage?.failures, failures > 0 {
-                Text("\(failures) fail")
-                    .font(.caption2)
-                    .foregroundStyle(.red)
+    private func providerCard(name: String, usage: MongiStatus.ServiceUsage?) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(name)
+                    .font(.caption.weight(.semibold))
+                Spacer()
+                if let failures = usage?.failures, failures > 0 {
+                    Text("\(failures) parse fail")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.red)
+                } else {
+                    Text("checked \(StatusDisplayFormatter.compactTime(usage?.lastCheckedAt))")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            UsageMeterView(label: "Short remaining", value: usage?.shortRemaining)
+            UsageMeterView(label: "Weekly remaining", value: usage?.weeklyRemaining)
+
+            HStack(spacing: 10) {
+                resetChip(label: "Short used", value: StatusDisplayFormatter.percentText(usage?.shortUsed))
+                resetChip(label: "Weekly used", value: StatusDisplayFormatter.percentText(usage?.weeklyUsed))
+            }
+
+            HStack(spacing: 10) {
+                resetChip(label: "Short reset", value: StatusDisplayFormatter.resetCountdown(resetAt: usage?.shortResetAt))
+                resetChip(label: "Weekly reset", value: StatusDisplayFormatter.resetCountdown(resetAt: usage?.weeklyResetAt))
             }
         }
+        .padding(10)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
     }
 
     // MARK: - Today
@@ -126,13 +182,14 @@ struct MenuBarStatusView: View {
             }
             Spacer()
             if let at = viewModel.lastRefreshedAt {
-                Text(at.formatted(date: .omitted, time: .shortened))
+                Text("refreshed \(at.formatted(date: .omitted, time: .shortened))")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 10)
         .padding(.vertical, 8)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
     }
 
     // MARK: - Action buttons
@@ -188,6 +245,10 @@ struct MenuBarStatusView: View {
         .foregroundStyle(.red)
     }
 
+    private func refreshOnPopoverOpen() {
+        Task { await viewModel.refreshStatus(showOutput: false) }
+    }
+
     // MARK: - Helpers
 
     private func openMainWindow() {
@@ -228,22 +289,42 @@ struct MenuBarStatusView: View {
         .hoverEffect()
     }
 
-    private func statusBadge(_ status: String?) -> some View {
-        Text(status?.uppercased() ?? "–")
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
-            .background(statusColor(status), in: Capsule())
+    private var refreshMetadata: String {
+        if viewModel.commandRecords[.refresh]?.status == .running {
+            return "refreshing"
+        }
+
+        return "cadence \(viewModel.refreshCadence.label)"
     }
 
-    private func statusColor(_ status: String?) -> Color {
+    private func outputColor(_ status: String?) -> Color {
         switch status {
-        case "ok": return .green
-        case "warning": return .orange
-        case "error": return .red
+        case "SHIPPED": return .green
+        case "LOCAL_ONLY": return .orange
+        case "NO_OUTPUT": return .red
         default: return .gray
         }
+    }
+
+    private func detailChip(_ text: String) -> some View {
+        Text(text)
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Color.primary.opacity(0.07), in: Capsule())
+    }
+
+    private func resetChip(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(value == "unavailable" ? .secondary : .primary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func indicator(label: String, value: Bool?) -> some View {
@@ -263,18 +344,6 @@ struct MenuBarStatusView: View {
         case false: return .red
         case nil: return .gray
         }
-    }
-
-    private func percentText(_ value: Int?) -> String {
-        guard let value else { return "—" }
-        return "\(value)%"
-    }
-
-    private func usageColor(_ value: Int?) -> Color {
-        guard let value else { return .secondary }
-        if value >= 80 { return .green }
-        if value >= 40 { return .orange }
-        return .red
     }
 
     private func statChip(label: String, value: Int?, warnIfNonzero: Bool = false) -> some View {
