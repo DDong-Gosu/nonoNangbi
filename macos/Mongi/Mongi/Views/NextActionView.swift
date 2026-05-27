@@ -6,7 +6,7 @@ struct NextActionView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Next Action")
+                Text("다음 행동")
                     .font(.headline)
                 Spacer()
                 Text((status?.overallStatus ?? "unknown").uppercased())
@@ -17,7 +17,7 @@ struct NextActionView: View {
                     .background(statusColor, in: Capsule())
             }
 
-            Text(status?.nextAction ?? "Refresh status to get the next action.")
+            Text(status?.nextAction ?? "상태를 새로고침하면 다음 행동을 확인할 수 있습니다.")
                 .font(.title3.weight(.semibold))
                 .fixedSize(horizontal: false, vertical: true)
         }

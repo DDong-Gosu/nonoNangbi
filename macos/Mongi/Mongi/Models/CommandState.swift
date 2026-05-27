@@ -14,15 +14,15 @@ enum CommandKind: String, CaseIterable, Identifiable, Sendable {
     var title: String {
         switch self {
         case .start:
-            return "Start Mongi"
+            return "몽이 시작"
         case .refresh:
-            return "Refresh Status"
+            return "상태 새로고침"
         case .health:
-            return "Health Check"
+            return "상태 점검"
         case .daily:
-            return "Daily Summary"
+            return "오늘 요약"
         case .value:
-            return "Value Review"
+            return "가치 리뷰"
         }
     }
 
@@ -51,13 +51,13 @@ enum CommandRunStatus: Sendable, Equatable {
     var label: String {
         switch self {
         case .idle:
-            return "Idle"
+            return "대기"
         case .running:
-            return "Running"
+            return "실행 중"
         case .success:
-            return "Success"
+            return "성공"
         case .failed:
-            return "Failed"
+            return "실패"
         }
     }
 }

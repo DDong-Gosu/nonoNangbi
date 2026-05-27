@@ -33,6 +33,8 @@ struct MongiStatus: Codable, Sendable {
 
     struct Output: Codable, Sendable {
         var outputStatus: String?
+        var displayLabel: String?
+        var displayMeaning: String?
         var reason: String?
         var hasLocalChanges: Bool?
         var hasUnpushedCommits: Bool?

@@ -6,6 +6,25 @@ const LOGIN_TEXT_REGEX = /sign in|log in|login|continue with|authenticate|authen
 const USAGE_TEXT_REGEX = /usage|limit|remaining|reset|week|weekly|hour|hours|5h|사용량|사용|한도|남음|재설정|주간|시간/i;
 const TURNSTILE_TEXT_REGEX = /cloudflare|turnstile|verify you are human|checking if the site connection is secure|사람인지 확인하십시오|사람인지 확인하세요|보안 확인 수행 중/i;
 
+const ANTI_KEYWORDS = [
+  "할인",
+  "쿠폰",
+  "프로모션",
+  "이벤트",
+  "discount",
+  "promo",
+  "promotion",
+  "coupon",
+  " off",
+  "% off",
+  "sale",
+  "광고",
+  "ad ",
+  "advert",
+  "savings",
+  "save up to"
+];
+
 function normalizeWhitespace(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
@@ -168,7 +187,22 @@ function findPercentCandidates(extraction, options = {}) {
   return results;
 }
 
+function hasAntiKeyword(candidate) {
+  const text = normalizeWhitespace([
+    candidate && candidate.tokenContext,
+    candidate && candidate.line,
+    candidate && candidate.previousLine,
+    candidate && candidate.nextLine
+  ].filter(Boolean).join(" ")).toLowerCase();
+
+  return ANTI_KEYWORDS.some((keyword) => text.includes(keyword.toLowerCase()));
+}
+
 function scoreCandidate(candidate, keywords) {
+  if (hasAntiKeyword(candidate)) {
+    return 0;
+  }
+
   const line = normalizeWhitespace(candidate.line).toLowerCase();
   const context = normalizeWhitespace(candidate.context).toLowerCase();
   const tokenContext = normalizeWhitespace(candidate.tokenContext || "").toLowerCase();
@@ -265,6 +299,7 @@ function inferErrorReason(extraction, percentCandidates) {
 }
 
 module.exports = {
+  ANTI_KEYWORDS,
   classifyLoginState,
   classifyTurnstileState,
   createRawTextSample,
@@ -272,6 +307,7 @@ module.exports = {
   extractPercentTokens,
   findPercentCandidates,
   getCandidateTexts,
+  hasAntiKeyword,
   inferPercentMeaning,
   inferErrorReason,
   makeParseResult,

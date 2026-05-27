@@ -123,8 +123,10 @@ npm run compile:app
 - popover 열 때 상태 자동 새로고침
 - refresh cadence 선택: manual, 5m, 10m, 15m
 - background refresh는 조용히 상태만 갱신하며 매번 Discord 알림을 보내지 않음
-- menu bar popover는 output status를 primary signal로 보여주고, Codex/Claude short/weekly remaining bar는 secondary signal로 보여줌
-- reset countdown은 reset 시간이 있으면 표시하고, 없으면 compact unavailable 상태로 표시함
+- menu bar popover는 output status를 한국어 label로 보여주고, Codex/Claude remaining을 각각 compact gauge bar 두 개로 보여줌 (5시간/주간, 세션/전체)
+- 사용량을 읽지 못한 경우 gauge는 빈 채로 두고 `확인 안 됨`을 표시한다. 누락된 값은 100%로 채우지 않는다
+- Full App은 Codex/Claude의 detailed usage bar, used percent, reset 정보를 보여줌
+- reset countdown은 reset 시간이 있으면 표시하고, 없으면 확인 안 됨 상태로 표시함
 - CDP Chrome 시작: `npm run start:chrome`
 - health 확인: `npm run health`
 - Daily Summary 확인: `npm run daily:summary`
@@ -144,7 +146,19 @@ Menu bar usage 값은 기본적으로 remaining percentage다.
 - Claude Short: current session used 값을 읽고 remaining으로 변환
 - Claude Weekly: all-models 또는 weekly used 값을 읽고 remaining으로 변환
 
-Popover의 usage bar는 remaining을 표시한다. Used 값은 보조 metadata로만 표시한다.
+Popover의 usage 요약은 provider 별로 두 개의 compact gauge bar로 remaining을 표시한다. 예: Codex `5시간 99% 남음`, `주간 69% 남음`. Claude `세션 33% 남음`, `전체 96% 남음`.
+
+Parser는 `할인`, `쿠폰`, `프로모션`, `discount`, `promo`, `coupon`, `sale` 같은 anti-keyword가 포함된 percent token을 사용량 후보에서 제외한다. 또한 keyword에 매칭되는 후보가 없으면 더 이상 임의 percent로 fallback하지 않는다. 즉, 값이 모호하면 `확인 안 됨` 상태로 노출되고 Discord usage line에서도 빠진다.
+
+Full App의 usage bar도 remaining 기준이다. Used 값은 보조 metadata로만 표시한다.
+
+내부 output status는 `SHIPPED`, `LOCAL_ONLY`, `NO_OUTPUT`을 유지하지만 사용자에게는 다음처럼 표시한다.
+
+- `SHIPPED`: 오늘 푸시함
+- `LOCAL_ONLY`: 로컬 작업만 있음
+- `NO_OUTPUT`: 산출물 없음
+
+Discord 메시지는 한국어 우선 3줄 이하로 보낸다. Background refresh와 status-json 조회는 Discord를 보내지 않는다. `Start Mongi`로 CDP Chrome을 실제로 시작할 때만 start notification을 보낸다.
 
 최신 값이 필요하면 refresh를 실행한다. Last refreshed와 각 provider의 last checked 시간이 stale data 여부를 확인하는 기준이다.
 

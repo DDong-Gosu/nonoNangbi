@@ -145,7 +145,6 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
 fi
 
 if cdp_reachable; then
-  node scripts/notify-start.js --best-effort >/dev/null 2>&1 || true
   echo "Mongi CDP Chrome is already reachable."
   echo "CDP URL: $CHROME_CDP_URL"
   echo "중복 탭을 피하려고 usage page는 새로 열지 않았습니다."

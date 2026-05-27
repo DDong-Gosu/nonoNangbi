@@ -65,25 +65,25 @@ struct ContentView: View {
                     statusBadge(viewModel.status?.overallStatus)
                 }
 
-                Text("Generated: \(viewModel.status?.generatedAt ?? "unknown")")
+                Text("생성: \(viewModel.status?.generatedAt ?? "확인 안 됨")")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text("Output: \(viewModel.status?.output?.outputStatus ?? "unknown")")
+                Text("산출물: \(StatusDisplayFormatter.outputLabel(viewModel.status?.output?.outputStatus))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text("Last refreshed: \(formatDate(viewModel.lastRefreshedAt))")
+                Text("새로고침: \(formatDate(viewModel.lastRefreshedAt))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text("Cadence: \(viewModel.refreshCadence.label)")
+                Text("주기: \(viewModel.refreshCadence.koreanLabel)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
             Spacer()
 
-            Picker("Refresh cadence", selection: $viewModel.refreshCadence) {
+            Picker("새로고침 주기", selection: $viewModel.refreshCadence) {
                 ForEach(RefreshCadence.allCases) { cadence in
-                    Text(cadence.label).tag(cadence)
+                    Text(cadence.koreanLabel).tag(cadence)
                 }
             }
             .pickerStyle(.segmented)
@@ -96,7 +96,7 @@ struct ContentView: View {
                     ProgressView()
                         .controlSize(.small)
                 } else {
-                    Text("Refresh Status")
+                    Text("상태 새로고침")
                 }
             }
             .disabled(viewModel.isRunningCommand)
@@ -129,7 +129,7 @@ struct ContentView: View {
             Text(message)
                 .font(.callout)
                 .foregroundStyle(.secondary)
-            Text("If this came from status JSON, run npm run status:json in Terminal to debug.")
+            Text("status JSON 문제라면 Terminal에서 npm run status:json으로 확인하세요.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -139,7 +139,7 @@ struct ContentView: View {
     }
 
     private func formatDate(_ date: Date?) -> String {
-        guard let date else { return "not yet" }
+        guard let date else { return "아직 없음" }
         return date.formatted(date: .omitted, time: .standard)
     }
 }

@@ -6,6 +6,21 @@ const OUTPUT_STATUSES = Object.freeze({
   SHIPPED: "SHIPPED"
 });
 
+const OUTPUT_STATUS_DISPLAY = Object.freeze({
+  [OUTPUT_STATUSES.NO_OUTPUT]: Object.freeze({
+    label: "산출물 없음",
+    meaning: "오늘 감지된 로컬 변경이나 푸시가 없습니다."
+  }),
+  [OUTPUT_STATUSES.LOCAL_ONLY]: Object.freeze({
+    label: "로컬 작업만 있음",
+    meaning: "로컬 변경이 있습니다. 아직 푸시되지 않았습니다."
+  }),
+  [OUTPUT_STATUSES.SHIPPED]: Object.freeze({
+    label: "오늘 푸시함",
+    meaning: "오늘 GitHub에 올라간 작업이 있습니다."
+  })
+});
+
 const SHIPPED_DETECTION_LIMITATION = "Remote/upstream commit date is used as a proxy for GitHub push time and may be stale if refs were not fetched.";
 
 function runGit(args, cwd) {
@@ -68,8 +83,15 @@ function classifyOutputStatus({ hasShippedToday, hasLocalChanges, hasUnpushedCom
   };
 }
 
+function getOutputStatusDisplay(status) {
+  return OUTPUT_STATUS_DISPLAY[status] || Object.freeze({
+    label: "상태 확인 안 됨",
+    meaning: "Git output 상태를 아직 읽지 못했습니다."
+  });
+}
+
 function createOutputStatusResult(overrides = {}) {
-  return {
+  const result = {
     outputStatus: OUTPUT_STATUSES.NO_OUTPUT,
     checkedAt: null,
     hasLocalChanges: false,
@@ -93,6 +115,13 @@ function createOutputStatusResult(overrides = {}) {
       shippedDetectionLimitation: SHIPPED_DETECTION_LIMITATION
     },
     ...overrides
+  };
+  const display = getOutputStatusDisplay(result.outputStatus);
+
+  return {
+    ...result,
+    displayLabel: overrides.displayLabel || display.label,
+    displayMeaning: overrides.displayMeaning || display.meaning
   };
 }
 
@@ -173,8 +202,10 @@ function getGitOutputStatus(options = {}) {
 
 module.exports = {
   OUTPUT_STATUSES,
+  OUTPUT_STATUS_DISPLAY,
   SHIPPED_DETECTION_LIMITATION,
   classifyOutputStatus,
   createOutputStatusResult,
+  getOutputStatusDisplay,
   getGitOutputStatus
 };

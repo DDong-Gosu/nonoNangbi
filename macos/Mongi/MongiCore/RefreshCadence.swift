@@ -21,6 +21,19 @@ public enum RefreshCadence: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    public var koreanLabel: String {
+        switch self {
+        case .manual:
+            return "수동"
+        case .fiveMinutes:
+            return "5분"
+        case .tenMinutes:
+            return "10분"
+        case .fifteenMinutes:
+            return "15분"
+        }
+    }
+
     public var intervalSeconds: Int? {
         switch self {
         case .manual:

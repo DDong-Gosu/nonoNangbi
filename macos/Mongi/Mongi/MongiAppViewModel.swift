@@ -53,7 +53,7 @@ final class MongiAppViewModel: ObservableObject {
         refreshInFlight = true
         defer { refreshInFlight = false }
 
-        setCommand(.refresh, status: .running, summary: "Running quiet usage refresh")
+        setCommand(.refresh, status: .running, summary: "조용히 사용량을 새로고침 중")
         let service = MongiStatusService(projectRoot: projectRoot)
         let result = await service.refreshAndLoadStatus()
         let now = Date()
@@ -63,7 +63,7 @@ final class MongiAppViewModel: ObservableObject {
 
         if result.status != nil {
             lastRefreshedAt = now
-            setCommand(.refresh, status: .success, exitCode: result.command.exitCode, ranAt: now, summary: "Status refreshed.")
+            setCommand(.refresh, status: .success, exitCode: result.command.exitCode, ranAt: now, summary: "상태를 새로고침했습니다.")
         } else {
             setCommand(.refresh, status: .failed, exitCode: result.command.exitCode, ranAt: now, summary: result.errorMessage)
         }
@@ -163,12 +163,12 @@ final class MongiAppViewModel: ObservableObject {
     }
 
     private func runCommand(_ kind: CommandKind, action: () async -> ShellResult) async -> ShellResult {
-        setCommand(kind, status: .running, summary: "Running \(kind.title)")
+        setCommand(kind, status: .running, summary: "\(kind.title) 실행 중")
 
         let result = await action()
         let now = Date()
         let runStatus: CommandRunStatus = result.succeeded ? .success : .failed
-        let summary = result.succeeded ? "Completed." : result.errorSummary
+        let summary = result.succeeded ? "완료했습니다." : result.errorSummary
 
         setCommand(kind, status: runStatus, exitCode: result.exitCode, ranAt: now, summary: summary)
         selectedOutput = makeOutput(kind: kind, result: result, ranAt: now, fallback: summary)
@@ -180,8 +180,8 @@ final class MongiAppViewModel: ObservableObject {
         if projectRootExists && projectRootLooksValid { return true }
 
         let message = projectRootExists
-            ? "Selected folder does not look like the Mongi Node project. package.json was not found."
-            : "Mongi project folder not found. Choose the correct project folder."
+            ? "선택한 폴더가 Mongi Node project로 보이지 않습니다. package.json을 찾지 못했습니다."
+            : "Mongi project folder를 찾지 못했습니다. 올바른 폴더를 선택하세요."
         let now = Date()
         let result = ShellResult(
             stdout: "",
@@ -218,7 +218,7 @@ final class MongiAppViewModel: ObservableObject {
 
     private func makeOutput(kind: CommandKind, result: ShellResult, ranAt: Date, fallback: String?) -> CommandOutput {
         let output = result.sanitizedCombinedOutput.trimmingCharacters(in: .whitespacesAndNewlines)
-        let body = output.isEmpty ? (fallback ?? "Command completed with no output.") : output
+        let body = output.isEmpty ? (fallback ?? "출력 없이 완료했습니다.") : output
         return CommandOutput(title: "\(kind.title) - exit \(result.exitCode)", output: body, result: result, ranAt: ranAt)
     }
 }

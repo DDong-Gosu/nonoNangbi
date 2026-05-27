@@ -59,15 +59,13 @@ function parseClaudeUsage(extraction) {
   const percentCandidates = findPercentCandidates(extraction);
   const shortCandidate = pickBestPercent(percentCandidates, SHORT_WINDOW_KEYWORDS);
   const weeklyCandidate = pickBestPercent(percentCandidates, WEEKLY_KEYWORDS);
-  const fallbackCandidate = percentCandidates[0] || null;
   const shortWindowPercent = shortCandidate ? shortCandidate.percent : null;
   const weeklyPercent = weeklyCandidate ? weeklyCandidate.percent : null;
-  const fallbackPercent = shortWindowPercent === null && weeklyPercent === null && fallbackCandidate ? fallbackCandidate.percent : null;
-  const rawShortWindowPercent = shortWindowPercent !== null ? shortWindowPercent : fallbackPercent;
+  const rawShortWindowPercent = shortWindowPercent;
   const rawWeeklyPercent = weeklyPercent;
-  const rawShortWindowMeaning = rawShortWindowPercent !== null ? inferPercentMeaning(shortCandidate || fallbackCandidate, "used") : "unknown";
-  const rawWeeklyPercentMeaning = rawWeeklyPercent !== null ? inferPercentMeaning(weeklyCandidate, "used") : "unknown";
-  const foundAny = shortWindowPercent !== null || weeklyPercent !== null || fallbackPercent !== null;
+  const rawShortWindowMeaning = shortCandidate ? inferPercentMeaning(shortCandidate, "used") : "unknown";
+  const rawWeeklyPercentMeaning = weeklyCandidate ? inferPercentMeaning(weeklyCandidate, "used") : "unknown";
+  const foundAny = shortWindowPercent !== null || weeklyPercent !== null;
 
   if (!foundAny) {
     return makeParseResult(extraction, {

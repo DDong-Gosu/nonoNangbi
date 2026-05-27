@@ -1,9 +1,9 @@
-const { OUTPUT_STATUSES } = require("../output/gitOutputStatus");
+const { OUTPUT_STATUSES, getOutputStatusDisplay } = require("../output/gitOutputStatus");
 
 const STATUS_LINES = Object.freeze({
-  [OUTPUT_STATUSES.NO_OUTPUT]: "Git: shipped/local output 감지 없음. 작은 변경 하나 시작.",
-  [OUTPUT_STATUSES.LOCAL_ONLY]: "Git: local work 있음. 오늘 push까지 닫기.",
-  [OUTPUT_STATUSES.SHIPPED]: "Git: 오늘 shipped evidence 감지됨. 다음 작은 마감 정리."
+  [OUTPUT_STATUSES.NO_OUTPUT]: "로컬 변경/푸시가 아직 없음.",
+  [OUTPUT_STATUSES.LOCAL_ONLY]: "아직 푸시 안 됨. 오늘 하나 올리자.",
+  [OUTPUT_STATUSES.SHIPPED]: "GitHub 산출물 감지됨."
 });
 
 function normalizeOutputStatus(value) {
@@ -28,6 +28,16 @@ function formatPercent(value) {
   return `${String(value)}%`;
 }
 
+function formatPercentNumber(value) {
+  const percent = formatPercent(value);
+
+  if (!percent) {
+    return null;
+  }
+
+  return percent.replace(/%$/, "");
+}
+
 function servicePercent(service, shortKeys, weeklyKeys) {
   if (!service || typeof service !== "object") {
     return null;
@@ -37,7 +47,7 @@ function servicePercent(service, shortKeys, weeklyKeys) {
   let weekly = null;
 
   for (const key of shortKeys) {
-    short = formatPercent(service[key]);
+    short = formatPercentNumber(service[key]);
 
     if (short) {
       break;
@@ -45,7 +55,7 @@ function servicePercent(service, shortKeys, weeklyKeys) {
   }
 
   for (const key of weeklyKeys) {
-    weekly = formatPercent(service[key]);
+    weekly = formatPercentNumber(service[key]);
 
     if (weekly) {
       break;
@@ -56,7 +66,7 @@ function servicePercent(service, shortKeys, weeklyKeys) {
     return null;
   }
 
-  return `S${short || "?"}/W${weekly || "?"}`;
+  return `${short || "?"}/${weekly || "?"}`;
 }
 
 function normalizeUsage(usage = {}) {
@@ -78,7 +88,7 @@ function formatUsageLine(usage = {}) {
     parts.push(`Claude ${normalized.claude}`);
   }
 
-  return parts.length > 0 ? `Usage remaining: ${parts.join(", ")}` : null;
+  return parts.length > 0 ? `${parts.join(" · ")} 남음` : null;
 }
 
 function lineCount(message) {
@@ -95,8 +105,9 @@ function ensureThreeLines(message) {
 
 function getOutputStatusMessage({ output = {}, usage = {} } = {}) {
   const outputStatus = normalizeOutputStatus(output.outputStatus);
+  const display = getOutputStatusDisplay(outputStatus);
   const lines = [
-    outputStatus,
+    `몽이 · ${display.label}`,
     STATUS_LINES[outputStatus]
   ];
   const usageLine = formatUsageLine(usage);
@@ -109,15 +120,14 @@ function getOutputStatusMessage({ output = {}, usage = {} } = {}) {
 }
 
 function getStartMessage({ output = {}, checkIntervalMinutes = null } = {}) {
-  const outputStatus = normalizeOutputStatus(output.outputStatus);
   const cadence = Number.isFinite(Number(checkIntervalMinutes)) && Number(checkIntervalMinutes) > 0
-    ? `${Number(checkIntervalMinutes)}분마다 확인`
-    : "cadence 미설정";
+    ? `${Number(checkIntervalMinutes)}분마다 조용히 확인`
+    : "조용히 상태만 확인";
 
   return ensureThreeLines([
-    "Mongi started",
-    `Watching Git output: ${outputStatus}`,
-    `Cadence: ${cadence}`
+    "몽이 · Mongi 시작",
+    cadence,
+    "알림은 필요한 경우만 전송"
   ].join("\n"));
 }
 

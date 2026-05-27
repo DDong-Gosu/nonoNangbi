@@ -389,46 +389,46 @@ function selectOverallStatus(warnings, errors) {
 
 function selectNextAction(context) {
   if (context.policyError) {
-    return "Fix config/policy.json because invalid values were found.";
+    return "config/policy.json 값이 잘못되었습니다. 설정을 먼저 고치세요.";
   }
 
   if (!context.envFound) {
-    return "Create .env from .env.example.";
+    return ".env.example을 기준으로 .env를 만드세요.";
   }
 
   if (!context.launchdInstalled || !context.launchdLoaded) {
-    return "Run npm run launchd:install because launchd is not loaded.";
+    return "launchd가 로드되지 않았습니다. npm run launchd:install을 실행하세요.";
   }
 
   if (!context.stateFound && !context.monitorHistoryFound) {
-    return "Run npm run monitor to create state and monitor history.";
+    return "npm run monitor를 실행해 state와 monitor 기록을 만드세요.";
   }
 
   if (!context.cdpReachable && context.browserMode === "cdp") {
-    return "Open Mongi Start.app or run npm run start:chrome because CDP is unreachable.";
+    return "CDP 연결이 끊겼습니다. Mongi Start.app 또는 npm run start:chrome을 실행하세요.";
   }
 
   if (context.usagePageMissing) {
-    return "Confirm Codex/Claude usage pages are open in the CDP Chrome profile.";
+    return "CDP Chrome에서 Codex/Claude 사용량 페이지가 열려 있는지 확인하세요.";
   }
 
   if (context.parserFailures) {
-    return "Run npm run debug:page-text and confirm usage pages are readable.";
+    return "npm run debug:page-text로 사용량 페이지를 읽을 수 있는지 확인하세요.";
   }
 
   if (context.currentlyFailing) {
-    return "Review npm run logs:summary because recent monitor failures are high.";
+    return "최근 monitor 실패가 많습니다. npm run logs:summary를 확인하세요.";
   }
 
   if (context.quietHoursActive) {
-    return "No urgent action. Notifications may be suppressed because quiet hours are active.";
+    return "급한 조치는 없습니다. 조용한 시간이라 일반 알림은 억제될 수 있습니다.";
   }
 
   if (context.historyFailuresHigh) {
-    return "Mongi is currently healthy. Earlier monitor failures were detected today.";
+    return "현재 Mongi는 정상입니다. 오늘 이전 monitor 실패 기록만 남아 있습니다.";
   }
 
-  return "Mongi is running normally.";
+  return "Mongi가 정상 실행 중입니다.";
 }
 
 async function buildStatus() {

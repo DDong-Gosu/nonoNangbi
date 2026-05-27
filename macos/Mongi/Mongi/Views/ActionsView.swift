@@ -10,7 +10,7 @@ struct ActionsView: View {
     let onValue: () -> Void
 
     var body: some View {
-        GroupBox("Actions") {
+        GroupBox("실행") {
             VStack(alignment: .leading, spacing: 14) {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: 12)], alignment: .leading, spacing: 12) {
                     commandButton(.start, action: onStart, prominent: true)
@@ -20,7 +20,7 @@ struct ActionsView: View {
                     commandButton(.value, action: onValue)
                 }
 
-                Text("Commands run through the existing Node scripts. This app does not install launchd, edit policy, or read .env.")
+                Text("기존 Node script를 실행합니다. 이 앱은 launchd 설치, policy 수정, .env 열람을 하지 않습니다.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -98,7 +98,7 @@ struct ActionsView: View {
 
     private func lastRunText(_ date: Date?) -> String {
         guard let date else {
-            return "not run"
+            return "실행 전"
         }
 
         return date.formatted(date: .omitted, time: .standard)

@@ -6,7 +6,7 @@ const { execFileSync } = require("child_process");
 const { detectCdpUnreachableEvent, detectEvents } = require("../src/events/eventDetector");
 const { dispatchNotifications, applyNotificationPatches } = require("../src/notifications/notificationDispatcher");
 const { getEventMessage, getOutputStatusMessage, getStartMessage, lineCount } = require("../src/notifications/messages");
-const { OUTPUT_STATUSES, classifyOutputStatus, getGitOutputStatus } = require("../src/output/gitOutputStatus");
+const { OUTPUT_STATUSES, classifyOutputStatus, getGitOutputStatus, getOutputStatusDisplay } = require("../src/output/gitOutputStatus");
 const { parseClaudeUsage } = require("../src/parsers/claudeParser");
 const { parseCodexUsage } = require("../src/parsers/codexParser");
 const { createDefaultState } = require("../src/state/stateStore");
@@ -70,8 +70,11 @@ function yesterdayIso() {
 }
 
 function assertShortMessage(message, expectedStatus) {
+  const display = getOutputStatusDisplay(expectedStatus);
+  const firstLine = String(message).split(/\r?\n/)[0] || "";
   assert(lineCount(message) <= 3, `${expectedStatus} message exceeds 3 lines.`);
-  assert(message.includes(expectedStatus), `${expectedStatus} message is missing status.`);
+  assert(message.includes(display.label), `${expectedStatus} message is missing Korean status label.`);
+  assert(!firstLine.includes(expectedStatus), `${expectedStatus} message exposes raw enum as primary label.`);
   assert(!message.includes("nextAction"), `${expectedStatus} message leaked nextAction wording.`);
   assert(!message.includes("Mongi is running normally"), `${expectedStatus} message leaked complex status wording.`);
 }
@@ -423,6 +426,10 @@ async function main() {
   }
 
   {
+    assert(getOutputStatusDisplay(OUTPUT_STATUSES.SHIPPED).label === "오늘 푸시함", "SHIPPED display label should be Korean.");
+    assert(getOutputStatusDisplay(OUTPUT_STATUSES.LOCAL_ONLY).label === "로컬 작업만 있음", "LOCAL_ONLY display label should be Korean.");
+    assert(getOutputStatusDisplay(OUTPUT_STATUSES.NO_OUTPUT).label === "산출물 없음", "NO_OUTPUT display label should be Korean.");
+
     const usage = {
       codex: { remainingShortWindowPercent: 99, remainingWeeklyPercent: 88 },
       claude: { remainingShortWindowPercent: 100, remainingWeeklyPercent: 75 }
@@ -432,41 +439,41 @@ async function main() {
       usage
     });
     assertShortMessage(noOutput, OUTPUT_STATUSES.NO_OUTPUT);
-    assert(noOutput.includes("shipped/local output 감지 없음"), "NO_OUTPUT message should describe no shipped/local Git output.");
-    assert(noOutput.includes("Usage remaining:"), "NO_OUTPUT message should label usage as remaining.");
-    assert(noOutput.includes("Codex S99%/W88%"), "NO_OUTPUT message should include exact Codex percentages.");
-    assert(noOutput.includes("Claude S100%/W75%"), "NO_OUTPUT message should include exact Claude percentages.");
+    assert(noOutput.includes("로컬 변경/푸시가 아직 없음"), "NO_OUTPUT message should describe missing local/pushed output in Korean.");
+    assert(noOutput.includes("Codex 99/88"), "NO_OUTPUT message should include exact Codex percentages.");
+    assert(noOutput.includes("Claude 100/75"), "NO_OUTPUT message should include exact Claude percentages.");
+    assert(noOutput.includes("남음"), "NO_OUTPUT message should label usage as remaining.");
 
     const localOnly = getOutputStatusMessage({
       output: { outputStatus: OUTPUT_STATUSES.LOCAL_ONLY },
       usage
     });
     assertShortMessage(localOnly, OUTPUT_STATUSES.LOCAL_ONLY);
-    assert(localOnly.includes("push"), "LOCAL_ONLY message should include a short ship-oriented action.");
+    assert(localOnly.includes("푸시"), "LOCAL_ONLY message should include a short ship-oriented action.");
 
     const shipped = getOutputStatusMessage({
       output: { outputStatus: OUTPUT_STATUSES.SHIPPED },
       usage
     });
     assertShortMessage(shipped, OUTPUT_STATUSES.SHIPPED);
-    assert(shipped.includes("shipped evidence"), "SHIPPED message should mention shipped evidence.");
+    assert(shipped.includes("GitHub 산출물"), "SHIPPED message should mention shipped output.");
 
     const missingUsage = getOutputStatusMessage({
       output: { outputStatus: OUTPUT_STATUSES.NO_OUTPUT },
       usage: {}
     });
     assertShortMessage(missingUsage, OUTPUT_STATUSES.NO_OUTPUT);
-    assert(!missingUsage.includes("Usage:"), "Missing usage should omit usage line.");
+    assert(!missingUsage.includes("Codex"), "Missing usage should omit usage line.");
 
     const start = getStartMessage({
       output: { outputStatus: OUTPUT_STATUSES.LOCAL_ONLY },
       checkIntervalMinutes: 10
     });
     assert(lineCount(start) <= 3, "Start message exceeds 3 lines.");
-    assert(start.includes("Mongi started"), "Start message should confirm startup.");
-    assert(start.includes("Watching Git output"), "Start message should say Git output is watched.");
-    assert(start.includes("10분마다 확인"), "Start message should include cadence.");
-    scenarioResults.push("V2 Discord messages are status-first and short");
+    assert(start.includes("Mongi 시작"), "Start message should confirm startup.");
+    assert(start.includes("10분마다 조용히 확인"), "Start message should include cadence.");
+    assert(!start.includes("LOCAL_ONLY"), "Start message should not duplicate raw output status.");
+    scenarioResults.push("V2 Discord messages are Korean-first and short");
   }
 
   {
@@ -491,7 +498,7 @@ async function main() {
       usage
     });
     assert(results[0].message === message, "Dry-run dispatch should use V2 output status message.");
-    assert(results[0].message.includes("Codex S90%/W80%"), "Dry-run message should include exact usage percentage.");
+    assert(results[0].message.includes("Codex 90/80"), "Dry-run message should include exact usage percentage.");
     assert(results[0].suppressed === "dry_run", "Dry-run dispatch should still mark dry_run suppression.");
     assertShortMessage(message, OUTPUT_STATUSES.LOCAL_ONLY);
     scenarioResults.push("V2 event Discord message uses output status");
@@ -587,6 +594,77 @@ async function main() {
     assert(output.outputStatus === OUTPUT_STATUSES.SHIPPED, "Upstream commit from today should be SHIPPED.");
     assert(output.hasShippedToday === true, "Shipped-today evidence should be detected.");
     scenarioResults.push("Output status SHIPPED from upstream commit date");
+  }
+
+  {
+    // Anti-keyword: a percent that lives next to "할인"/"discount" must not be picked up as usage.
+    const parseResult = parseClaudeUsage({
+      serviceKey: "claude",
+      serviceName: "Claude",
+      bodyText: "플랜 사용량 한도 Pro\n최대 30% 할인\n결제 안내",
+      candidateLines: [
+        "플랜 사용량 한도 Pro",
+        "최대 30% 할인"
+      ],
+      domCandidates: [],
+      accessibilityCandidates: [],
+      error: null,
+      loginState: { loginLikely: false, textLooksUsage: true },
+      turnstileState: { turnstileLikely: false }
+    });
+    assert(parseResult.ok === false, "Anti-keyword Claude parse should not be marked ok.");
+    assert(parseResult.remainingShortWindowPercent === null, "Promo percent should not become a Claude short remaining value.");
+    assert(parseResult.remainingWeeklyPercent === null, "Promo percent should not become a Claude weekly remaining value.");
+    assert(parseResult.usedShortWindowPercent === null, "Promo percent should not become a Claude short used value.");
+    assert(parseResult.usedWeeklyPercent === null, "Promo percent should not become a Claude weekly used value.");
+    scenarioResults.push("Claude promo/discount percent does not become usage");
+  }
+
+  {
+    // Codex anti-keyword guard
+    const parseResult = parseCodexUsage({
+      serviceKey: "codex",
+      serviceName: "Codex",
+      bodyText: "프로모션\n사용량과 관련 없는 정보\n45% 쿠폰\n결제",
+      candidateLines: [
+        "프로모션",
+        "45% 쿠폰"
+      ],
+      domCandidates: [],
+      accessibilityCandidates: [],
+      error: null,
+      loginState: { loginLikely: false, textLooksUsage: true },
+      turnstileState: { turnstileLikely: false }
+    });
+    assert(parseResult.ok === false, "Codex promo/coupon percent should not parse successfully.");
+    assert(parseResult.remainingShortWindowPercent === null, "Codex coupon percent should not become short remaining.");
+    assert(parseResult.remainingWeeklyPercent === null, "Codex coupon percent should not become weekly remaining.");
+    scenarioResults.push("Codex coupon/discount percent does not become usage");
+  }
+
+  {
+    // Missing usage must surface as unavailable, never as 100.
+    const state = createDefaultState();
+    const parseResult = parseClaudeUsage({
+      serviceKey: "claude",
+      serviceName: "Claude",
+      bodyText: "Some unrelated marketing text with no usage hints.",
+      candidateLines: [],
+      domCandidates: [],
+      accessibilityCandidates: [],
+      error: null,
+      loginState: { loginLikely: false, textLooksUsage: false },
+      turnstileState: { turnstileLikely: false }
+    });
+    updateServiceState(state, parseResult);
+    assert(parseResult.ok === false, "No-percent Claude page should not parse ok.");
+    assert(state.services.claude.remainingShortWindowPercent === null, "Missing Claude short remaining must remain null, not 100.");
+    assert(state.services.claude.remainingWeeklyPercent === null, "Missing Claude weekly remaining must remain null, not 100.");
+    const usageLine = require("../src/notifications/messages").formatUsageLine({
+      claude: state.services.claude
+    });
+    assert(usageLine === null, "Discord usage line should omit Claude when remaining values are missing.");
+    scenarioResults.push("Missing Claude usage stays unavailable, not 100");
   }
 
   console.log(JSON.stringify({ ok: true, scenarios: scenarioResults }, null, 2));
