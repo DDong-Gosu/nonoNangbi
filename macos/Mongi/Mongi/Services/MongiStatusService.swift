@@ -16,8 +16,8 @@ struct MongiStatusService: Sendable {
 
     func refreshAndLoadStatus() async -> StatusLoadResult {
         let refreshResult = await runner.run(
-            ShellRunner.npmCommand("monitor -- --dry-run-notifications"),
-            description: "npm run monitor -- --dry-run-notifications"
+            ShellRunner.npmCommand("monitor -- --dry-run-notifications --force-reload"),
+            description: "npm run monitor -- --dry-run-notifications --force-reload"
         )
         let statusResult = await loadStatus()
 

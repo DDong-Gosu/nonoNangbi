@@ -1,0 +1,7 @@
+{
+  "name": "com.mongi.bridge",
+  "description": "Mongi usage native messaging host (Phase G spike)",
+  "path": "REPLACE_WITH_ABSOLUTE_PATH/spikes/browser-extension/native-host/mongi_bridge.sh",
+  "type": "stdio",
+  "allowed_origins": ["chrome-extension://REPLACE_WITH_EXTENSION_ID/"]
+}

@@ -214,8 +214,29 @@ async function main() {
       }
     ]);
     assert(selected.index === 1, "Source selection should prefer the later equally scored matching tab.");
-    assert(serviceUsagePageMatches({ key: "codex", usageUrl: "https://chatgpt.com/codex/cloud/settings/analytics#usage" }, "https://claude.ai/settings/usage") === false, "Codex source selection must reject Claude tabs.");
+    assert(serviceUsagePageMatches({ key: "codex", usageUrl: "https://chatgpt.com/codex/cloud/settings/analytics" }, "https://claude.ai/settings/usage") === false, "Codex source selection must reject Claude tabs.");
     scenarioResults.push("Source selection prefers fresher matching provider tab");
+  }
+
+  {
+    const selected = selectUsagePageCandidate([
+      {
+        index: 3,
+        url: "https://chatgpt.com/codex/cloud/settings/other",
+        title: "Codex Analytics",
+        matchType: "provider_url_pattern",
+        score: 60
+      },
+      {
+        index: 0,
+        url: "https://chatgpt.com/codex/cloud/settings/analytics",
+        title: "Settings",
+        matchType: "exact_configured_url",
+        score: 100
+      }
+    ]);
+    assert(selected.index === 0, "Exact configured URL should beat title/provider matches.");
+    scenarioResults.push("Source selection prefers exact configured URL");
   }
 
   {
@@ -296,6 +317,31 @@ async function main() {
   }
 
   {
+    const parseResult = parseCodexUsage({
+      serviceKey: "codex",
+      serviceName: "Codex",
+      bodyText: "잔고\nCodex 사용량은 공유 에이전트의 사용 한도에서 차감됩니다\n5시간 사용 한도\n0% 남음\n오후 5:05 초기화\n주간 사용 한도\n31% 남음\n2026. 6. 1. 오후 12:28 초기화",
+      candidateLines: [
+        "5시간 사용 한도",
+        "0% 남음",
+        "주간 사용 한도",
+        "31% 남음"
+      ],
+      domCandidates: [],
+      accessibilityCandidates: [],
+      error: null,
+      loginState: { loginLikely: false, textLooksUsage: true },
+      turnstileState: { turnstileLikely: false },
+      expectedUsageLabelsPresent: true
+    });
+    assert(parseResult.remainingShortWindowPercent === 0, "Codex 5-hour remaining should parse as 0.");
+    assert(parseResult.remainingWeeklyPercent === 31, "Codex weekly remaining should parse as 31.");
+    assert(parseResult.usedShortWindowPercent === 100, "Codex 0 remaining should derive 100 used.");
+    assert(parseResult.usedWeeklyPercent === 69, "Codex 31 remaining should derive 69 used.");
+    scenarioResults.push("V3.0.1 Codex fixture maps 0/31 remaining");
+  }
+
+  {
     const parseResult = parseClaudeUsage({
       serviceKey: "claude",
       serviceName: "Claude",
@@ -319,6 +365,31 @@ async function main() {
     assert(parseResult.rawShortWindowMeaning === "used", "Claude short meaning should be used.");
     assert(parseResult.rawWeeklyPercentMeaning === "used", "Claude weekly meaning should be used.");
     scenarioResults.push("Claude latest screenshot fixture maps current session 50 used and all-models 7 used");
+  }
+
+  {
+    const parseResult = parseClaudeUsage({
+      serviceKey: "claude",
+      serviceName: "Claude",
+      bodyText: "플랜 사용 한도 Pro\n현재 세션\n0분 후 재설정\n81% 사용됨\n주간 한도\n모든 모델\n오전 3:00에 재설정\n14% 사용됨",
+      candidateLines: [
+        "현재 세션",
+        "81% 사용됨",
+        "모든 모델",
+        "14% 사용됨"
+      ],
+      domCandidates: [],
+      accessibilityCandidates: [],
+      error: null,
+      loginState: { loginLikely: false, textLooksUsage: true },
+      turnstileState: { turnstileLikely: false },
+      expectedUsageLabelsPresent: true
+    });
+    assert(parseResult.usedShortWindowPercent === 81, "Claude current session should parse as 81 used.");
+    assert(parseResult.usedWeeklyPercent === 14, "Claude all-models should parse as 14 used.");
+    assert(parseResult.remainingShortWindowPercent === 19, "Claude 81 used should derive 19 remaining.");
+    assert(parseResult.remainingWeeklyPercent === 86, "Claude 14 used should derive 86 remaining.");
+    scenarioResults.push("V3.0.1 Claude fixture maps 81/14 used to 19/86 remaining");
   }
 
   {
@@ -806,7 +877,78 @@ async function main() {
     assert(state.services.codex.remainingWeeklyPercent === 51, "Read failure should preserve last known weekly usage.");
     assert(state.sources.codex.freshness === FRESHNESS.STALE, "Read failure should mark source freshness stale.");
     assert(state.sources.codex.consecutiveFailures === 1, "Read failure should increment source consecutiveFailures.");
+    assert(state.sources.codex.lastFreshReadAt === "2026-05-28T00:00:00.000Z", "Failed read must not advance source lastFreshReadAt.");
+    assert(Boolean(state.sources.codex.lastParseFailedAt), "Failed read should record source lastParseFailedAt.");
     scenarioResults.push("V3 last known usage is preserved with stale freshness");
+  }
+
+  {
+    const service = { key: "codex", name: "Codex", usageUrl: "https://chatgpt.com/codex/cloud/settings/analytics", parser: () => null };
+    const backend = createCdpBackend(service, {
+      performRead: async () => ({
+        extraction: {
+          serviceKey: "codex",
+          serviceName: "Codex",
+          finalUrl: "https://claude.ai/settings/usage",
+          bodyText: "5시간 사용 한도\n0% 남음\n주간 사용 한도\n31% 남음",
+          expectedUsageLabelsPresent: true,
+          source: {
+            selected: true,
+            selectedTab: {
+              targetId: "wrong-target",
+              url: "https://claude.ai/settings/usage",
+              title: "Claude",
+              matchType: "provider_url_pattern"
+            }
+          },
+          error: null
+        },
+        parseResult: makeReadResult("codex", true).parseResult
+      }),
+      logger: { info: () => {}, warn: () => {}, error: () => {} }
+    });
+    const result = await backend.readUsage({
+      context: {},
+      sourceState: { consecutiveFailures: 0, usage: { remainingShortWindowPercent: 85 } },
+      serviceState: makeServiceState({ remainingShortWindowPercent: 85 }),
+      forceReload: true
+    });
+    assert(result.parseResult.ok === false, "URL mismatch must not be fresh even when parser succeeds.");
+    assert(result.backend.freshness === FRESHNESS.STALE, "URL mismatch should preserve stale freshness.");
+    assert(result.backend.freshnessDecisionReason === "freshness_rejected_source_url_guard_failed", "URL mismatch should record freshness decision reason.");
+    scenarioResults.push("V3.0.1 URL mismatch parser success is not fresh");
+  }
+
+  {
+    const service = { key: "claude", name: "Claude", usageUrl: "https://claude.ai/settings/usage", parser: () => null };
+    const source = {
+      selected: true,
+      reloadedExistingPage: true,
+      selectedTab: {
+        targetId: "claude-target",
+        url: "https://claude.ai/settings/usage",
+        title: "Claude",
+        matchType: "exact_configured_url",
+        exactConfiguredUrlMatch: true,
+        sourceUrlGuardPassed: true
+      }
+    };
+    const read = makeReadResult("claude", true, { source });
+    read.extraction.finalUrl = "https://claude.ai/settings/usage";
+    read.extraction.expectedUsageLabelsPresent = false;
+    const backend = createCdpBackend(service, {
+      performRead: async () => read,
+      logger: { info: () => {}, warn: () => {}, error: () => {} }
+    });
+    const result = await backend.readUsage({
+      context: {},
+      sourceState: { consecutiveFailures: 0, usage: { remainingShortWindowPercent: 70 } },
+      serviceState: makeServiceState({ remainingShortWindowPercent: 70 }),
+      forceReload: true
+    });
+    assert(result.parseResult.ok === false, "Parser success without expected labels must not be fresh.");
+    assert(result.backend.freshnessDecisionReason === "freshness_rejected_expected_usage_labels_missing", "Missing labels should record freshness decision reason.");
+    scenarioResults.push("V3.0.1 parser success without expected labels is stale");
   }
 
   {

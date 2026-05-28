@@ -70,6 +70,13 @@ function updateSourceState(state, parseResult, backendResult, checkedAt) {
   source.lastAttemptAt = checkedAt;
   source.lastRecoveryAction = backendResult && backendResult.lastRecoveryAction !== undefined ? backendResult.lastRecoveryAction : source.lastRecoveryAction || null;
   source.lastReloadAt = backendResult && backendResult.lastReloadAt ? backendResult.lastReloadAt : source.lastReloadAt || null;
+  source.sourceReloadedAt = backendResult && backendResult.sourceReloadedAt ? backendResult.sourceReloadedAt : source.sourceReloadedAt || source.lastReloadAt || null;
+  source.readAfterReload = backendResult && backendResult.readAfterReload !== undefined ? Boolean(backendResult.readAfterReload) : Boolean(source.readAfterReload);
+  source.candidateCount = backendResult && backendResult.candidateCount !== undefined ? Number(backendResult.candidateCount || 0) : Number(source.candidateCount || 0);
+  source.exactConfiguredUrlMatch = backendResult && backendResult.exactConfiguredUrlMatch !== undefined ? Boolean(backendResult.exactConfiguredUrlMatch) : Boolean(source.exactConfiguredUrlMatch);
+  source.sourceUrlGuardPassed = backendResult && backendResult.sourceUrlGuardPassed !== undefined ? Boolean(backendResult.sourceUrlGuardPassed) : Boolean(source.sourceUrlGuardPassed);
+  source.expectedUsageLabelsPresent = backendResult && backendResult.expectedUsageLabelsPresent !== undefined ? backendResult.expectedUsageLabelsPresent : source.expectedUsageLabelsPresent !== undefined ? source.expectedUsageLabelsPresent : null;
+  source.freshnessDecisionReason = backendResult && backendResult.freshnessDecisionReason ? backendResult.freshnessDecisionReason : source.freshnessDecisionReason || null;
 
   if (target !== null || (backendResult && backendResult.target === null)) {
     source.target = target;
@@ -82,6 +89,8 @@ function updateSourceState(state, parseResult, backendResult, checkedAt) {
     source.lastFreshReadAt = checkedAt;
     source.consecutiveFailures = 0;
     source.lastError = null;
+    source.lastParseFailedAt = null;
+    source.lastFailureAt = null;
     return;
   }
 
@@ -89,6 +98,8 @@ function updateSourceState(state, parseResult, backendResult, checkedAt) {
   source.freshness = (backendResult && backendResult.freshness) || (source.usage ? FRESHNESS.STALE : FRESHNESS.UNKNOWN);
   source.consecutiveFailures = Number(source.consecutiveFailures || 0) + 1;
   source.lastError = (backendResult && backendResult.lastError) || parseResult.errorReason || "read_failed";
+  source.lastParseFailedAt = checkedAt;
+  source.lastFailureAt = checkedAt;
 }
 
 function updateServiceState(state, parseResult, backendResult = null) {

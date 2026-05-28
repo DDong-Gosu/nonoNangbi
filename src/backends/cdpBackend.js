@@ -1,5 +1,5 @@
 const logger = require("../utils/logger");
-const { extractUsagePage, listUsagePageCandidates, selectUsagePageCandidate } = require("../extractors/usageExtractor");
+const { extractUsagePage, listUsagePageCandidates, selectUsagePageCandidate, configuredUsageUrlMatches, serviceUsagePageMatches } = require("../extractors/usageExtractor");
 const { BACKEND_IDS, FRESHNESS, SOURCE_STATUSES, createBackendDiagnostics } = require("./usageBackend");
 
 const DEFAULT_RELOAD_POLICY = {
@@ -48,7 +48,87 @@ function sourceTargetFromExtraction(extraction) {
     targetId: selectedTab.targetId || null,
     url: selectedTab.url || "",
     title: selectedTab.title || "",
-    matchType: selectedTab.matchType || null
+    matchType: selectedTab.matchType || null,
+    exactConfiguredUrlMatch: Boolean(selectedTab.exactConfiguredUrlMatch),
+    sourceUrlGuardPassed: Boolean(selectedTab.sourceUrlGuardPassed)
+  };
+}
+
+function sourceMetadataFromExtraction(service, extraction) {
+  const source = extraction && extraction.source;
+  const selectedTab = source && source.selectedTab;
+  const selectedUrl = selectedTab && selectedTab.url ? selectedTab.url : extraction && extraction.finalUrl;
+  const exactConfiguredUrlMatch = configuredUsageUrlMatches(selectedUrl, service.usageUrl);
+  const sourceUrlGuardPassed = serviceUsagePageMatches(service, selectedUrl);
+
+  return {
+    candidateCount: source && Number.isFinite(Number(source.candidateCount)) ? Number(source.candidateCount) : 0,
+    tabCount: source && Number.isFinite(Number(source.tabCount)) ? Number(source.tabCount) : 0,
+    selectedTargetUrl: selectedUrl || "",
+    selectedTargetTitle: selectedTab && selectedTab.title ? selectedTab.title : "",
+    exactConfiguredUrlMatch,
+    sourceUrlGuardPassed,
+    readAfterReload: source && source.reloadedExistingPage !== undefined ? Boolean(source.reloadedExistingPage) : null,
+    sourceReloadedAt: source && source.reloadedExistingPage ? extraction.extractedAt : null,
+    expectedUsageLabelsPresent: extraction && extraction.expectedUsageLabelsPresent !== undefined ? Boolean(extraction.expectedUsageLabelsPresent) : null
+  };
+}
+
+function isPercentValue(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric >= 0 && numeric <= 100;
+}
+
+function validateFreshRead({ service, extraction, parseResult, reloadRequired = false }) {
+  const source = extraction && extraction.source;
+  const selectedTab = source && source.selectedTab;
+  const metadata = sourceMetadataFromExtraction(service, extraction);
+
+  if (!selectedTab) {
+    return { ok: false, reason: "freshness_rejected_target_missing", metadata };
+  }
+
+  if (!metadata.sourceUrlGuardPassed) {
+    return { ok: false, reason: "freshness_rejected_source_url_guard_failed", metadata };
+  }
+
+  if (!metadata.exactConfiguredUrlMatch && selectedTab.matchType !== "provider_url_pattern") {
+    return { ok: false, reason: "freshness_rejected_no_source_match_evidence", metadata };
+  }
+
+  if (extraction && extraction.error) {
+    return { ok: false, reason: extraction.error.reason || "freshness_rejected_extraction_failed", metadata };
+  }
+
+  if (metadata.expectedUsageLabelsPresent === false) {
+    return { ok: false, reason: "freshness_rejected_expected_usage_labels_missing", metadata };
+  }
+
+  if (!parseResult || parseResult.ok !== true) {
+    return { ok: false, reason: parseResult && parseResult.errorReason || "freshness_rejected_parser_invalid", metadata };
+  }
+
+  if (!isPercentValue(parseResult.remainingShortWindowPercent) || !isPercentValue(parseResult.remainingWeeklyPercent)) {
+    return { ok: false, reason: "freshness_rejected_normalization_invalid", metadata };
+  }
+
+  if (reloadRequired && metadata.readAfterReload === false) {
+    return { ok: false, reason: "freshness_rejected_reload_read_missing", metadata };
+  }
+
+  return {
+    ok: true,
+    reason: metadata.exactConfiguredUrlMatch ? "fresh_verified_exact_url_reload_read" : "fresh_verified_provider_url_guard_reload_read",
+    metadata
+  };
+}
+
+function guardedFailureParseResult(parseResult, validation) {
+  return {
+    ...parseResult,
+    ok: false,
+    errorReason: validation.reason,
+    freshnessDecisionReason: validation.reason
   };
 }
 
@@ -101,6 +181,7 @@ function shouldAttemptReload({ serviceKey, projectedFailures, sourceState, now =
 }
 
 function buildFailureDiagnostics({ service, parseResult, extraction, projectedFailures, sourceState, serviceState, status, freshness, action, lastReloadAt, lastError }) {
+  const sourceMetadata = sourceMetadataFromExtraction(service, extraction);
   return createBackendDiagnostics({
     backend: BACKEND_IDS.CDP,
     status: status || failureStatus(projectedFailures, sourceState, serviceState),
@@ -110,11 +191,14 @@ function buildFailureDiagnostics({ service, parseResult, extraction, projectedFa
     lastError: lastError || parseResult.errorReason || (extraction && extraction.error && extraction.error.reason) || "read_failed",
     target: sourceTargetFromExtraction(extraction),
     projectedFailures,
-    source: service.key
+    source: service.key,
+    freshnessDecisionReason: parseResult.freshnessDecisionReason || parseResult.errorReason || (extraction && extraction.error && extraction.error.reason) || "read_failed",
+    ...sourceMetadata
   });
 }
 
-function buildSuccessDiagnostics({ service, parseResult, extraction, action, lastReloadAt }) {
+function buildSuccessDiagnostics({ service, parseResult, extraction, action, lastReloadAt, validation }) {
+  const sourceMetadata = validation && validation.metadata ? validation.metadata : sourceMetadataFromExtraction(service, extraction);
   return createBackendDiagnostics({
     backend: BACKEND_IDS.CDP,
     status: SOURCE_STATUSES.HEALTHY,
@@ -125,7 +209,9 @@ function buildSuccessDiagnostics({ service, parseResult, extraction, action, las
     target: sourceTargetFromExtraction(extraction),
     source: service.key,
     parseMethod: parseResult.parseMethod,
-    parseConfidence: parseResult.parseConfidence
+    parseConfidence: parseResult.parseConfidence,
+    freshnessDecisionReason: validation && validation.reason ? validation.reason : "fresh_verified",
+    ...sourceMetadata
   });
 }
 
@@ -166,6 +252,49 @@ function createCdpBackend(service, options = {}) {
     return {
       extraction,
       parseResult
+    };
+  }
+
+  function finalizeRead(read, { action = null, lastReloadAt = null, reloadRequired = false, projectedFailures = 1, sourceState = null, serviceState = null } = {}) {
+    const validation = validateFreshRead({
+      service,
+      extraction: read.extraction,
+      parseResult: read.parseResult,
+      reloadRequired
+    });
+
+    if (validation.ok) {
+      return {
+        ...read,
+        backend: buildSuccessDiagnostics({
+          service,
+          parseResult: read.parseResult,
+          extraction: read.extraction,
+          action,
+          lastReloadAt,
+          validation
+        })
+      };
+    }
+
+    const guardedParseResult = guardedFailureParseResult(read.parseResult, validation);
+
+    return {
+      ...read,
+      parseResult: guardedParseResult,
+      backend: buildFailureDiagnostics({
+        service,
+        parseResult: guardedParseResult,
+        extraction: read.extraction,
+        projectedFailures,
+        sourceState,
+        serviceState,
+        status: failureStatus(projectedFailures, sourceState, serviceState),
+        freshness: failureFreshness(sourceState, serviceState),
+        action: action ? `${action}-freshness-rejected` : "freshness-rejected",
+        lastReloadAt,
+        lastError: validation.reason
+      })
     };
   }
 
@@ -255,37 +384,38 @@ function createCdpBackend(service, options = {}) {
           postReloadWaitMs: dependencies.policy.waitAfterReloadMs[service.key] || 7000
         });
 
-        if (reloaded.parseResult.ok) {
+        const finalized = finalizeRead(reloaded, {
+          action: "manual-reload-success",
+          lastReloadAt: reloadAt,
+          reloadRequired: true,
+          projectedFailures,
+          sourceState,
+          serviceState
+        });
+
+        if (finalized.parseResult.ok) {
           dependencies.logger.info(`${service.name} manual reload success.`, {
             serviceKey: service.key,
             backend: BACKEND_IDS.CDP,
-            parseMethod: reloaded.parseResult.parseMethod,
-            parseConfidence: reloaded.parseResult.parseConfidence
+            parseMethod: finalized.parseResult.parseMethod,
+            parseConfidence: finalized.parseResult.parseConfidence,
+            freshnessDecisionReason: finalized.backend.freshnessDecisionReason
           });
-          return {
-            ...reloaded,
-            backend: buildSuccessDiagnostics({
-              service,
-              parseResult: reloaded.parseResult,
-              extraction: reloaded.extraction,
-              action: "manual-reload-success",
-              lastReloadAt: reloadAt
-            })
-          };
+          return finalized;
         }
 
         dependencies.logger.error(`${service.name} manual reload failed.`, {
           serviceKey: service.key,
           backend: BACKEND_IDS.CDP,
-          errorReason: reloaded.parseResult.errorReason
+          errorReason: finalized.parseResult.errorReason
         });
 
         return {
-          ...reloaded,
+          ...finalized,
           backend: buildFailureDiagnostics({
             service,
-            parseResult: reloaded.parseResult,
-            extraction: reloaded.extraction,
+            parseResult: finalized.parseResult,
+            extraction: finalized.extraction,
             projectedFailures,
             sourceState,
             serviceState,
@@ -293,7 +423,7 @@ function createCdpBackend(service, options = {}) {
             freshness: failureFreshness(sourceState, serviceState),
             action: "manual-reload-failed",
             lastReloadAt: reloadAt,
-            lastError: reloaded.parseResult.errorReason
+            lastError: finalized.parseResult.errorReason
           })
         };
       } finally {
@@ -303,55 +433,55 @@ function createCdpBackend(service, options = {}) {
 
     const first = await performRead(context, { phase: "initial" });
 
-    if (first.parseResult.ok) {
+    const finalizedFirst = first.parseResult.ok ? finalizeRead(first, {
+      projectedFailures,
+      sourceState,
+      serviceState
+    }) : first;
+
+    if (finalizedFirst.parseResult.ok) {
       dependencies.logger.info(`${service.name} CDP read success.`, {
         serviceKey: service.key,
         backend: BACKEND_IDS.CDP,
         phase: "initial",
-        parseMethod: first.parseResult.parseMethod,
-        parseConfidence: first.parseResult.parseConfidence
+        parseMethod: finalizedFirst.parseResult.parseMethod,
+        parseConfidence: finalizedFirst.parseResult.parseConfidence,
+        freshnessDecisionReason: finalizedFirst.backend.freshnessDecisionReason
       });
-      return {
-        ...first,
-        backend: buildSuccessDiagnostics({
-          service,
-          parseResult: first.parseResult,
-          extraction: first.extraction
-        })
-      };
+      return finalizedFirst;
     }
 
     dependencies.logger.warn(`${service.name} CDP read failure.`, {
       serviceKey: service.key,
       backend: BACKEND_IDS.CDP,
       phase: "initial",
-      errorReason: first.parseResult.errorReason
+      errorReason: finalizedFirst.parseResult.errorReason
     });
 
     const retry = await performRead(context, { phase: "retry" });
 
-    if (retry.parseResult.ok) {
+    const finalizedRetry = retry.parseResult.ok ? finalizeRead(retry, {
+      action: "retry-success",
+      projectedFailures,
+      sourceState,
+      serviceState
+    }) : retry;
+
+    if (finalizedRetry.parseResult.ok) {
       dependencies.logger.info(`${service.name} CDP retry success.`, {
         serviceKey: service.key,
         backend: BACKEND_IDS.CDP,
-        parseMethod: retry.parseResult.parseMethod,
-        parseConfidence: retry.parseResult.parseConfidence
+        parseMethod: finalizedRetry.parseResult.parseMethod,
+        parseConfidence: finalizedRetry.parseResult.parseConfidence,
+        freshnessDecisionReason: finalizedRetry.backend.freshnessDecisionReason
       });
-      return {
-        ...retry,
-        backend: buildSuccessDiagnostics({
-          service,
-          parseResult: retry.parseResult,
-          extraction: retry.extraction,
-          action: "retry-success"
-        })
-      };
+      return finalizedRetry;
     }
 
     dependencies.logger.warn(`${service.name} CDP retry failure.`, {
       serviceKey: service.key,
       backend: BACKEND_IDS.CDP,
-      errorReason: retry.parseResult.errorReason
+      errorReason: finalizedRetry.parseResult.errorReason
     });
 
     const selected = await rediscoverTarget(context);
@@ -361,31 +491,30 @@ function createCdpBackend(service, options = {}) {
         ...retry,
         backend: buildFailureDiagnostics({
           service,
-          parseResult: retry.parseResult,
-          extraction: retry.extraction,
+          parseResult: finalizedRetry.parseResult,
+          extraction: finalizedRetry.extraction,
           projectedFailures,
           sourceState,
           serviceState,
           status: SOURCE_STATUSES.MISSING,
           freshness: failureFreshness(sourceState, serviceState),
           action: "target-rediscovery-failed",
-          lastError: retry.parseResult.errorReason || "target_missing"
+          lastError: finalizedRetry.parseResult.errorReason || "target_missing"
         })
       };
     }
 
     const rediscovered = await performRead(context, { phase: "target-rediscovery" });
 
-    if (rediscovered.parseResult.ok) {
-      return {
-        ...rediscovered,
-        backend: buildSuccessDiagnostics({
-          service,
-          parseResult: rediscovered.parseResult,
-          extraction: rediscovered.extraction,
-          action: "target-rediscovery-success"
-        })
-      };
+    const finalizedRediscovered = rediscovered.parseResult.ok ? finalizeRead(rediscovered, {
+      action: "target-rediscovery-success",
+      projectedFailures,
+      sourceState,
+      serviceState
+    }) : rediscovered;
+
+    if (finalizedRediscovered.parseResult.ok) {
+      return finalizedRediscovered;
     }
 
     const reloadDecision = shouldAttemptReload({
@@ -413,18 +542,18 @@ function createCdpBackend(service, options = {}) {
       });
 
       return {
-        ...rediscovered,
+        ...finalizedRediscovered,
         backend: buildFailureDiagnostics({
           service,
-          parseResult: rediscovered.parseResult,
-          extraction: rediscovered.extraction,
+          parseResult: finalizedRediscovered.parseResult,
+          extraction: finalizedRediscovered.extraction,
           projectedFailures,
           sourceState,
           serviceState,
           status: failureStatus(projectedFailures, sourceState, serviceState),
           freshness: failureFreshness(sourceState, serviceState),
           action,
-          lastError: rediscovered.parseResult.errorReason
+          lastError: finalizedRediscovered.parseResult.errorReason
         })
       };
     }
@@ -446,37 +575,38 @@ function createCdpBackend(service, options = {}) {
         postReloadWaitMs: dependencies.policy.waitAfterReloadMs[service.key] || 7000
       });
 
-      if (reloaded.parseResult.ok) {
+      const finalizedReload = reloaded.parseResult.ok ? finalizeRead(reloaded, {
+        action: "reload-success",
+        lastReloadAt: reloadAt,
+        reloadRequired: true,
+        projectedFailures,
+        sourceState,
+        serviceState
+      }) : reloaded;
+
+      if (finalizedReload.parseResult.ok) {
         dependencies.logger.info(`${service.name} reload success.`, {
           serviceKey: service.key,
           backend: BACKEND_IDS.CDP,
-          parseMethod: reloaded.parseResult.parseMethod,
-          parseConfidence: reloaded.parseResult.parseConfidence
+          parseMethod: finalizedReload.parseResult.parseMethod,
+          parseConfidence: finalizedReload.parseResult.parseConfidence,
+          freshnessDecisionReason: finalizedReload.backend.freshnessDecisionReason
         });
-        return {
-          ...reloaded,
-          backend: buildSuccessDiagnostics({
-            service,
-            parseResult: reloaded.parseResult,
-            extraction: reloaded.extraction,
-            action: "reload-success",
-            lastReloadAt: reloadAt
-          })
-        };
+        return finalizedReload;
       }
 
       dependencies.logger.error(`${service.name} reload failed.`, {
         serviceKey: service.key,
         backend: BACKEND_IDS.CDP,
-        errorReason: reloaded.parseResult.errorReason
+        errorReason: finalizedReload.parseResult.errorReason
       });
 
       return {
-        ...reloaded,
+        ...finalizedReload,
         backend: buildFailureDiagnostics({
           service,
-          parseResult: reloaded.parseResult,
-          extraction: reloaded.extraction,
+          parseResult: finalizedReload.parseResult,
+          extraction: finalizedReload.extraction,
           projectedFailures,
           sourceState,
           serviceState,
@@ -484,7 +614,7 @@ function createCdpBackend(service, options = {}) {
           freshness: failureFreshness(sourceState, serviceState),
           action: "reload-failed",
           lastReloadAt: reloadAt,
-          lastError: reloaded.parseResult.errorReason
+          lastError: finalizedReload.parseResult.errorReason
         })
       };
     } finally {

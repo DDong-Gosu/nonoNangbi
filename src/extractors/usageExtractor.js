@@ -79,6 +79,7 @@ function createMissingUsagePageExtraction(service, extractedAt) {
     domCandidates: [],
     accessibilityCandidates: [],
     extractedAt,
+    expectedUsageLabelsPresent: false,
     navigationStatus: null,
     error: {
       reason: "usage_page_not_open",
@@ -133,6 +134,8 @@ function sanitizeCandidate(candidate) {
     url: candidate.url || "",
     title: candidate.title || "",
     matchType: candidate.matchType || "unknown",
+    exactConfiguredUrlMatch: Boolean(candidate.exactConfiguredUrlMatch),
+    sourceUrlGuardPassed: Boolean(candidate.sourceUrlGuardPassed),
     score: candidate.score || 0
   };
 }
@@ -175,6 +178,7 @@ async function listUsagePageCandidates(context, service) {
 
     const targetInfo = await getPageTargetInfo(page);
     const exact = configuredUsageUrlMatches(pageUrl, service.usageUrl);
+    const sourceUrlGuardPassed = serviceUsagePageMatches(service, pageUrl);
     const title = targetInfo && targetInfo.title ? targetInfo.title : await pageTitle(page);
     const titleMatch = String(title || "").toLowerCase().includes(service.name.toLowerCase());
 
@@ -185,6 +189,8 @@ async function listUsagePageCandidates(context, service) {
       url: pageUrl,
       title,
       matchType: exact ? "exact_configured_url" : "provider_url_pattern",
+      exactConfiguredUrlMatch: exact,
+      sourceUrlGuardPassed,
       score: (exact ? 100 : 50) + (titleMatch ? 10 : 0) + index / 1000
     });
   }
@@ -464,6 +470,8 @@ async function extractUsagePage(context, service, options = {}) {
     const targetInfo = await getPageTargetInfo(page);
     const title = targetInfo && targetInfo.title ? targetInfo.title : await pageTitle(page);
     const selectedTab = source && source.selectedTab ? source.selectedTab : {};
+    const finalExactMatch = configuredUsageUrlMatches(finalUrl, service.usageUrl);
+    const finalGuardPassed = serviceUsagePageMatches(service, finalUrl);
     source = {
       ...(source || {}),
       selected: true,
@@ -472,7 +480,9 @@ async function extractUsagePage(context, service, options = {}) {
         targetId: (targetInfo && targetInfo.targetId) || selectedTab.targetId || null,
         url: finalUrl,
         title,
-        matchType: serviceUsagePageMatches(service, finalUrl) ? (configuredUsageUrlMatches(finalUrl, service.usageUrl) ? "exact_configured_url" : "provider_url_pattern") : "navigated",
+        matchType: finalGuardPassed ? (finalExactMatch ? "exact_configured_url" : "provider_url_pattern") : "navigated",
+        exactConfiguredUrlMatch: finalExactMatch,
+        sourceUrlGuardPassed: finalGuardPassed,
         score: selectedTab.score || null
       },
       reusedExistingPage,
@@ -488,6 +498,7 @@ async function extractUsagePage(context, service, options = {}) {
       ...domCandidates.map((candidate) => candidate.text),
       ...accessibilityCandidates.map((candidate) => candidate.text)
     ].join("\n");
+    const expectedUsageLabelsPresent = usageTextReady(service, combinedText);
 
     return {
       serviceKey: service.key,
@@ -500,6 +511,7 @@ async function extractUsagePage(context, service, options = {}) {
       domCandidates,
       accessibilityCandidates,
       extractedAt,
+      expectedUsageLabelsPresent,
       navigationStatus: response ? response.status() : null,
       source,
       error: null,
@@ -522,6 +534,7 @@ async function extractUsagePage(context, service, options = {}) {
       domCandidates: [],
       accessibilityCandidates: [],
       extractedAt,
+      expectedUsageLabelsPresent: usageTextReady(service, bodyText),
       navigationStatus: null,
       source,
       error: {
@@ -543,5 +556,6 @@ module.exports = {
   extractUsagePage,
   listUsagePageCandidates,
   selectUsagePageCandidate,
+  configuredUsageUrlMatches,
   serviceUsagePageMatches
 };

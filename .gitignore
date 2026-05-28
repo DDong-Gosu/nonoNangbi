@@ -13,6 +13,7 @@ dist/
 .build/
 macos/Mongi/.build/
 .DS_Store
+spikes/wkwebview/mongi-webview-spike
 !logs/.gitkeep
 !data/.gitkeep
 docs/

@@ -101,7 +101,7 @@ CHROME_PATH="${CHROME_PATH:-/Applications/Google Chrome.app/Contents/MacOS/Googl
 CHROME_CDP_PORT="${CHROME_CDP_PORT:-$DEFAULT_CHROME_CDP_PORT}"
 CHROME_CDP_URL="${CHROME_CDP_URL:-http://127.0.0.1:${CHROME_CDP_PORT}}"
 CHROME_USER_DATA_DIR="${CHROME_USER_DATA_DIR:-$HOME/.mongi-chrome-profile}"
-CODEX_USAGE_URL="${CODEX_USAGE_URL:-https://chatgpt.com/codex/cloud/settings/analytics#usage}"
+CODEX_USAGE_URL="${CODEX_USAGE_URL:-https://chatgpt.com/codex/cloud/settings/analytics}"
 CLAUDE_USAGE_URL="${CLAUDE_USAGE_URL:-https://claude.ai/settings/usage}"
 CHROME_USER_DATA_DIR="$(expand_home_path "$CHROME_USER_DATA_DIR")"
 

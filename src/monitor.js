@@ -110,6 +110,7 @@ async function runService(context, service, state, options = {}) {
 async function runMonitorCycle() {
   const baseConfig = loadConfig();
   const argvDryRun = process.argv.includes("--dry-run-notifications");
+  const argvForceReload = process.argv.includes("--force-reload");
   const policyResult = loadPolicy({ strictJson: false });
   const config = configWithPolicy(baseConfig, policyResult.policy);
   const dryRun = config.dryRunNotifications || argvDryRun;
@@ -139,7 +140,7 @@ async function runMonitorCycle() {
     .filter((command) => command.type === "reload-source" && command.source)
     .map((command) => command.source));
   const reconnectRequested = commands.some((command) => command.type === "reconnect-browser");
-  const refreshRequested = commands.some((command) => command.type === "refresh-now");
+  const refreshRequested = commands.some((command) => command.type === "refresh-now") || argvForceReload;
   const healthRequested = commands.some((command) => command.type === "run-health-check");
 
   for (const warning of policyResult.warnings) {
@@ -232,7 +233,7 @@ async function runMonitorCycle() {
     for (const service of services) {
       try {
         const result = await runService(context, service, state, {
-          forceReload: manualReloadSources.has(service.key)
+          forceReload: refreshRequested || manualReloadSources.has(service.key)
         });
         const previousServiceState = clone(state.services[service.key]);
         updateServiceState(state, result.parseResult, result.backend);
@@ -475,6 +476,7 @@ async function main() {
   const owner = resolveOwner(loopMode);
   const mode = loopMode ? "loop" : "single";
   const { entrypoint, nodePath } = monitorMetaFromEnv();
+  const forceReloadOnce = !loopMode && process.argv.includes("--force-reload");
 
   const lock = acquireLock({ owner, mode });
   if (!lock.acquired) {
@@ -485,6 +487,16 @@ async function main() {
       holderOwner: lock.holder && lock.holder.owner,
       holderMode: lock.holder && lock.holder.mode
     });
+
+    if (forceReloadOnce) {
+      logger.warn("Force reload requested; running one reload-read cycle without taking monitor ownership.", {
+        holderPid: lock.holder && lock.holder.pid,
+        holderOwner: lock.holder && lock.holder.owner,
+        holderMode: lock.holder && lock.holder.mode
+      });
+      return runMonitorCycle();
+    }
+
     return 0;
   }
 

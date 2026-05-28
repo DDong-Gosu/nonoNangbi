@@ -95,15 +95,23 @@ struct MenuBarStatusView: View {
             }
             CompactGaugeRow(
                 title: StatusDisplayFormatter.shortGaugeTitle(provider: name),
-                remaining: usage?.shortRemaining,
+                remaining: freshRemaining(usage?.shortRemaining, usage: usage),
                 resetCountdown: StatusDisplayFormatter.resetCountdown(resetAt: usage?.shortResetAt)
             )
             CompactGaugeRow(
                 title: StatusDisplayFormatter.weeklyGaugeTitle(provider: name),
-                remaining: usage?.weeklyRemaining,
+                remaining: freshRemaining(usage?.weeklyRemaining, usage: usage),
                 resetCountdown: StatusDisplayFormatter.resetCountdown(resetAt: usage?.weeklyResetAt)
             )
         }
+    }
+
+    private func freshRemaining(_ value: Int?, usage: MongiStatus.ServiceUsage?) -> Int? {
+        guard usage?.stale != true, usage?.freshness == "fresh" else {
+            return nil
+        }
+
+        return value
     }
 
     private func providerStatusBadge(usage: MongiStatus.ServiceUsage?) -> some View {

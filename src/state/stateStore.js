@@ -70,10 +70,19 @@ function createSourceState(source) {
     usage: null,
     lastFreshReadAt: null,
     lastAttemptAt: null,
+    lastParseFailedAt: null,
+    lastFailureAt: null,
     consecutiveFailures: 0,
     lastError: null,
     lastRecoveryAction: null,
     lastReloadAt: null,
+    sourceReloadedAt: null,
+    readAfterReload: false,
+    candidateCount: 0,
+    exactConfiguredUrlMatch: false,
+    sourceUrlGuardPassed: false,
+    expectedUsageLabelsPresent: null,
+    freshnessDecisionReason: null,
     target: null
   };
 }
@@ -319,10 +328,19 @@ function normalizeSourceState(sourceState, serviceState, source) {
     usage,
     lastFreshReadAt,
     lastAttemptAt,
+    lastParseFailedAt: (sourceState && sourceState.lastParseFailedAt) || serviceState && serviceState.lastParseFailedAt || null,
+    lastFailureAt: (sourceState && sourceState.lastFailureAt) || serviceState && serviceState.lastParseFailedAt || null,
     consecutiveFailures,
     lastError: (sourceState && sourceState.lastError !== undefined ? sourceState.lastError : serviceState && serviceState.lastParseFailureReason) || null,
     lastRecoveryAction: (sourceState && sourceState.lastRecoveryAction) || null,
     lastReloadAt: (sourceState && sourceState.lastReloadAt) || null,
+    sourceReloadedAt: (sourceState && sourceState.sourceReloadedAt) || (sourceState && sourceState.lastReloadAt) || null,
+    readAfterReload: Boolean(sourceState && sourceState.readAfterReload),
+    candidateCount: Number(sourceState && sourceState.candidateCount || 0),
+    exactConfiguredUrlMatch: Boolean(sourceState && sourceState.exactConfiguredUrlMatch),
+    sourceUrlGuardPassed: Boolean(sourceState && sourceState.sourceUrlGuardPassed),
+    expectedUsageLabelsPresent: sourceState && sourceState.expectedUsageLabelsPresent !== undefined ? sourceState.expectedUsageLabelsPresent : null,
+    freshnessDecisionReason: (sourceState && sourceState.freshnessDecisionReason) || null,
     target: (sourceState && sourceState.target !== undefined ? sourceState.target : targetFromServiceState(serviceState)) || null
   };
 }

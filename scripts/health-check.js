@@ -209,9 +209,10 @@ function printService(name, service, source) {
 
   console.log(`- ${name}: backend ${formatValue(source && source.backend || "cdp")}, status ${formatValue(source && source.status)}, freshness ${formatValue(source && source.freshness)}, short remaining ${formatValue(service.remainingShortWindowPercent)}, weekly remaining ${formatValue(service.remainingWeeklyPercent)}, failures ${sourceFailures}, checked ${formatValue(source && source.lastFreshReadAt || successAt)}, attempted ${formatValue(source && source.lastAttemptAt || attemptedAt)}`);
   console.log(`  Recovery: last action ${formatValue(source && source.lastRecoveryAction)}, last reload ${formatValue(source && source.lastReloadAt)}, reload cooldown ${reloadCooldown === null ? "unknown" : `${reloadCooldown}ms`}`);
+  console.log(`  Freshness: reason ${formatValue(source && source.freshnessDecisionReason)}, exact URL ${formatValue(source && source.exactConfiguredUrlMatch)}, guard ${formatValue(source && source.sourceUrlGuardPassed)}, labels ${formatValue(source && source.expectedUsageLabelsPresent)}, read after reload ${formatValue(source && source.readAfterReload)}, source reloaded ${formatValue(source && source.sourceReloadedAt)}, parse failed ${formatValue(source && source.lastParseFailedAt || service.lastParseFailedAt || service.lastParseFailureAt)}, candidates ${formatValue(source && source.candidateCount)}`);
 
   if (source && source.target) {
-    console.log(`  Target: found / ${formatValue(source.target.title)} / ${formatValue(source.target.url)}`);
+    console.log(`  Target: found / ${formatValue(source.target.title)} / ${formatValue(source.target.url)} / exact ${formatValue(source.target.exactConfiguredUrlMatch)} / guard ${formatValue(source.target.sourceUrlGuardPassed)}`);
   } else if (service.source && service.source.selectedTab) {
     console.log(`  Target: found / ${formatValue(service.source.selectedTab.title)} / ${formatValue(service.source.selectedTab.url)}`);
   } else {

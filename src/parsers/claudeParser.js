@@ -42,6 +42,39 @@ const WEEKLY_KEYWORDS = [
   "주 단위"
 ];
 
+const SHORT_ANCHOR_REGEX = /current\s*session|현재\s*세션|세션/i;
+const WEEKLY_ANCHOR_REGEX = /all\s*models?|모든\s*모델|전체\s*모델/i;
+
+function pickClaudePercent(candidates, keywords, anchorRegex, rejectRegex) {
+  const scored = candidates
+    .map((candidate) => {
+      const base = pickBestPercent([candidate], keywords);
+
+      if (!base) {
+        return null;
+      }
+
+      const context = [
+        candidate.previousLine,
+        candidate.line,
+        candidate.nextLine,
+        candidate.context
+      ].filter(Boolean).join(" ");
+      const anchorBoost = anchorRegex.test(context) ? 30 : 0;
+      const rejectPenalty = rejectRegex && rejectRegex.test(context) ? 20 : 0;
+
+      return {
+        ...base,
+        score: base.score + anchorBoost - rejectPenalty
+      };
+    })
+    .filter(Boolean)
+    .filter((candidate) => candidate.score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  return scored[0] || null;
+}
+
 function parseClaudeUsage(extraction) {
   if (extraction.turnstileState && extraction.turnstileState.turnstileLikely) {
     return makeParseResult(extraction, {
@@ -58,8 +91,8 @@ function parseClaudeUsage(extraction) {
   }
 
   const percentCandidates = findPercentCandidates(extraction);
-  const shortCandidate = pickBestPercent(percentCandidates, SHORT_WINDOW_KEYWORDS);
-  const weeklyCandidate = pickBestPercent(percentCandidates, WEEKLY_KEYWORDS);
+  const shortCandidate = pickClaudePercent(percentCandidates, SHORT_WINDOW_KEYWORDS, SHORT_ANCHOR_REGEX, WEEKLY_ANCHOR_REGEX);
+  const weeklyCandidate = pickClaudePercent(percentCandidates, WEEKLY_KEYWORDS, WEEKLY_ANCHOR_REGEX, SHORT_ANCHOR_REGEX);
   const shortWindowPercent = shortCandidate ? shortCandidate.percent : null;
   const weeklyPercent = weeklyCandidate ? weeklyCandidate.percent : null;
   const rawShortWindowPercent = shortWindowPercent;

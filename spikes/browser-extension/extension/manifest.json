@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Mongi Usage Bridge (Phase G Spike)",
+  "version": "0.1.0",
+  "description": "Reads Claude/Codex usage from the page DOM and bridges it to Mongi. Spike only.",
+  "permissions": ["nativeMessaging", "alarms", "storage"],
+  "host_permissions": [
+    "https://claude.ai/settings/usage*",
+    "https://chatgpt.com/codex/cloud/settings/analytics*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://claude.ai/settings/usage*",
+        "https://chatgpt.com/codex/cloud/settings/analytics*"
+      ],
+      "js": ["extract.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

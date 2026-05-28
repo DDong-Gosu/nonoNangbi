@@ -81,11 +81,28 @@ struct MongiStatus: Codable, Sendable {
         var consecutiveFailures: Int?
         var lastFreshReadAt: String?
         var lastAttemptAt: String?
+        var sourceReloadedAt: String?
+        var readAfterReload: Bool?
+        var candidateCount: Int?
+        var exactConfiguredUrlMatch: Bool?
+        var sourceUrlGuardPassed: Bool?
+        var expectedUsageLabelsPresent: Bool?
+        var freshnessDecisionReason: String?
         var lastError: String?
         var lastRecoveryAction: String?
         var lastReloadAt: String?
         var reloadCooldownRemainingMs: Int?
         var targetFound: Bool?
+        var target: Target?
+    }
+
+    struct Target: Codable, Sendable {
+        var targetId: String?
+        var url: String?
+        var title: String?
+        var matchType: String?
+        var exactConfiguredUrlMatch: Bool?
+        var sourceUrlGuardPassed: Bool?
     }
 
     struct Today: Codable, Sendable {

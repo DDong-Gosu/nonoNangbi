@@ -340,11 +340,19 @@ function serviceUsage(state, serviceKey) {
       consecutiveFailures: source && source.consecutiveFailures || null,
       lastFreshReadAt: source && source.lastFreshReadAt || null,
       lastAttemptAt: source && source.lastAttemptAt || null,
+      sourceReloadedAt: source && source.sourceReloadedAt || source && source.lastReloadAt || null,
+      readAfterReload: source && source.readAfterReload || false,
+      candidateCount: source && source.candidateCount || 0,
+      exactConfiguredUrlMatch: source && source.exactConfiguredUrlMatch || false,
+      sourceUrlGuardPassed: source && source.sourceUrlGuardPassed || false,
+      expectedUsageLabelsPresent: source && source.expectedUsageLabelsPresent !== undefined ? source.expectedUsageLabelsPresent : null,
+      freshnessDecisionReason: source && source.freshnessDecisionReason || null,
       lastError: source && source.lastError || null,
       lastRecoveryAction: source && source.lastRecoveryAction || null,
       lastReloadAt: source && source.lastReloadAt || null,
       reloadCooldownRemainingMs: source ? cooldownRemainingMs(source, new Date(), DEFAULT_RELOAD_POLICY) : null,
-      targetFound: Boolean(source && source.target)
+      targetFound: Boolean(source && source.target),
+      target: source && source.target || null
     };
   }
 
@@ -379,11 +387,19 @@ function serviceUsage(state, serviceKey) {
     consecutiveFailures: sourceFailures,
     lastFreshReadAt: source && source.lastFreshReadAt || lastSuccessfulCheckedAt,
     lastAttemptAt: source && source.lastAttemptAt || service.lastAttemptedAt || service.lastCheckedAt || null,
+    sourceReloadedAt: source && source.sourceReloadedAt || source && source.lastReloadAt || null,
+    readAfterReload: source && source.readAfterReload || false,
+    candidateCount: source && source.candidateCount || 0,
+    exactConfiguredUrlMatch: source && source.exactConfiguredUrlMatch || false,
+    sourceUrlGuardPassed: source && source.sourceUrlGuardPassed || false,
+    expectedUsageLabelsPresent: source && source.expectedUsageLabelsPresent !== undefined ? source.expectedUsageLabelsPresent : null,
+    freshnessDecisionReason: source && source.freshnessDecisionReason || null,
     lastError: source && source.lastError || service.lastParseFailureReason || null,
     lastRecoveryAction: source && source.lastRecoveryAction || null,
     lastReloadAt: source && source.lastReloadAt || null,
     reloadCooldownRemainingMs: source ? cooldownRemainingMs(source, new Date(), DEFAULT_RELOAD_POLICY) : null,
-    targetFound: Boolean(source && source.target)
+    targetFound: Boolean(source && source.target),
+    target: source && source.target || null
   };
 }
 

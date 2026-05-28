@@ -6,7 +6,7 @@ const paths = require("./runtime/paths");
 dotenv.config({ quiet: true });
 
 const DEFAULTS = {
-  codexUsageUrl: "https://chatgpt.com/codex/cloud/settings/analytics#usage",
+  codexUsageUrl: "https://chatgpt.com/codex/cloud/settings/analytics",
   claudeUsageUrl: "https://claude.ai/settings/usage",
   checkIntervalMinutes: 10,
   idleMinutesBeforeSummary: 20,

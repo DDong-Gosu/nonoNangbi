@@ -1,0 +1,48 @@
+{
+  "receivedAt": "2026-05-28T08:59:49.169Z",
+  "parseOk": true,
+  "parseError": null,
+  "topLevelKeys": [
+    "hook_event_name",
+    "session_id",
+    "transcript_path",
+    "cwd",
+    "version",
+    "model",
+    "workspace",
+    "output_style",
+    "cost",
+    "exceeds_200k_tokens",
+    "context_window",
+    "rate_limits"
+  ],
+  "model": "Opus 4.7",
+  "sessionId": "abc123-s…",
+  "version": "2.1.153",
+  "outputStyle": "default",
+  "workspaceDir": "/Users/example/code/demo",
+  "cost": {
+    "totalCostUsd": 0.4213,
+    "totalDurationMs": 81234,
+    "totalLinesAdded": 120,
+    "totalLinesRemoved": 17
+  },
+  "contextWindow": {
+    "exceeds200k": false,
+    "size": 200000,
+    "currentUsage": 54213,
+    "usedPercentage": 27.1,
+    "remainingPercentage": 72.9
+  },
+  "rateLimits": {
+    "present": true,
+    "fiveHourUsedPct": 38.5,
+    "fiveHourResetsAt": 1748448000,
+    "weeklyUsedPct": 61.2,
+    "weeklyResetsAt": 1748880000,
+    "rawRateLimitKeys": [
+      "five_hour",
+      "seven_day"
+    ]
+  }
+}
