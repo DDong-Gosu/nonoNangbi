@@ -6,8 +6,9 @@ const logger = require("../src/utils/logger");
 const { selectServices } = require("../src/services");
 const { extractUsagePage } = require("../src/extractors/usageExtractor");
 const { closeBrowserResources, getBrowserContext } = require("../src/browser/browserContext");
+const { logsDir } = require("../src/runtime/paths");
 
-const LOGS_PATH = path.resolve("logs");
+const LOGS_PATH = logsDir;
 
 function percentSnippets(lines) {
   return (lines || [])
@@ -70,8 +71,8 @@ function writeDiagnostics(service, extraction, parseResult) {
   fs.writeFileSync(summaryPath, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
 
   return {
-    textPath: path.relative(process.cwd(), textPath),
-    summaryPath: path.relative(process.cwd(), summaryPath)
+    textPath,
+    summaryPath
   };
 }
 

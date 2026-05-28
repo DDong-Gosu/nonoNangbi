@@ -34,15 +34,15 @@ final class StatusDisplayFormatterTests: XCTestCase {
         XCTAssertEqual(StatusDisplayFormatter.usageSummary(provider: "Claude", shortRemaining: 33, weeklyRemaining: 96), "Claude 남음 33% / 96%")
         XCTAssertEqual(StatusDisplayFormatter.shortRemainingLabel(provider: "Codex"), "5시간 남음")
         XCTAssertEqual(StatusDisplayFormatter.weeklyRemainingLabel(provider: "Codex"), "주간 남음")
-        XCTAssertEqual(StatusDisplayFormatter.shortRemainingLabel(provider: "Claude"), "세션 남음")
-        XCTAssertEqual(StatusDisplayFormatter.weeklyRemainingLabel(provider: "Claude"), "전체 남음")
+        XCTAssertEqual(StatusDisplayFormatter.shortRemainingLabel(provider: "Claude"), "5시간 남음")
+        XCTAssertEqual(StatusDisplayFormatter.weeklyRemainingLabel(provider: "Claude"), "주간 남음")
     }
 
     func testGaugeTitles() {
         XCTAssertEqual(StatusDisplayFormatter.shortGaugeTitle(provider: "Codex"), "5시간")
         XCTAssertEqual(StatusDisplayFormatter.weeklyGaugeTitle(provider: "Codex"), "주간")
-        XCTAssertEqual(StatusDisplayFormatter.shortGaugeTitle(provider: "Claude"), "세션")
-        XCTAssertEqual(StatusDisplayFormatter.weeklyGaugeTitle(provider: "Claude"), "전체")
+        XCTAssertEqual(StatusDisplayFormatter.shortGaugeTitle(provider: "Claude"), "5시간")
+        XCTAssertEqual(StatusDisplayFormatter.weeklyGaugeTitle(provider: "Claude"), "주간")
     }
 
     func testCadenceLabels() {

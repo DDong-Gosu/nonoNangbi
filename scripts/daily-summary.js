@@ -4,7 +4,7 @@ const path = require("path");
 const { loadConfig } = require("../src/config");
 
 const PROJECT_ROOT = path.resolve(__dirname, "..");
-const STATE_PATH = path.join(PROJECT_ROOT, "data/state.json");
+const STATE_PATH = loadConfig().stateFilePath;
 const OUT_LOG_PATH = path.join(PROJECT_ROOT, "logs/launchd-out.log");
 const ERROR_LOG_PATH = path.join(PROJECT_ROOT, "logs/launchd-error.log");
 const PROJECT_NAME = "Mongi Usage Coach";
@@ -364,7 +364,7 @@ function main() {
 
   if (!summary.files.stateFound) {
     console.log("- state: missing or unreadable");
-    console.log("- Next: Run npm run monitor or npm run test:state to create data/state.json.");
+    console.log(`- Next: Run npm run monitor or npm run test:state to create ${STATE_PATH}.`);
   } else {
     printService("Codex", summary.usage.codex);
     printService("Claude", summary.usage.claude);

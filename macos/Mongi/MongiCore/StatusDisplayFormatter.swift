@@ -82,27 +82,27 @@ public enum StatusDisplayFormatter {
     }
 
     public static func shortRemainingLabel(provider: String) -> String {
-        provider.lowercased() == "claude" ? "세션 남음" : "5시간 남음"
+        "5시간 남음"
     }
 
     public static func weeklyRemainingLabel(provider: String) -> String {
-        provider.lowercased() == "claude" ? "전체 남음" : "주간 남음"
+        "주간 남음"
     }
 
     public static func shortUsedLabel(provider: String) -> String {
-        provider.lowercased() == "claude" ? "세션 사용" : "5시간 사용"
+        "5시간 사용"
     }
 
     public static func weeklyUsedLabel(provider: String) -> String {
-        provider.lowercased() == "claude" ? "전체 사용" : "주간 사용"
+        "주간 사용"
     }
 
     public static func shortGaugeTitle(provider: String) -> String {
-        provider.lowercased() == "claude" ? "세션" : "5시간"
+        "5시간"
     }
 
     public static func weeklyGaugeTitle(provider: String) -> String {
-        provider.lowercased() == "claude" ? "전체" : "주간"
+        "주간"
     }
 
     private static func clampedPercent(_ value: Int) -> Int {

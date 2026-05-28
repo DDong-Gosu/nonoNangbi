@@ -5,6 +5,7 @@ const { execFileSync } = require("child_process");
 const { loadConfig } = require("../src/config");
 const { getGitOutputStatus } = require("../src/output/gitOutputStatus");
 const { loadPolicy, summarizePolicy } = require("../src/policy/policyStore");
+const { DEFAULT_RELOAD_POLICY, cooldownRemainingMs } = require("../src/backends/cdpBackend");
 
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const LABEL = "com.donghoon.mongi-usage-coach";
@@ -310,9 +311,14 @@ function quietHoursActive(quietHours, now = new Date()) {
 
 function serviceUsage(state, serviceKey) {
   const service = state && state.services && state.services[serviceKey];
+  const source = state && state.sources && state.sources[serviceKey];
 
   if (!service) {
     return {
+      sourceKey: serviceKey,
+      backend: source && source.backend || "cdp",
+      status: source && source.status || "missing",
+      freshness: source && source.freshness || "unknown",
       shortRemaining: null,
       weeklyRemaining: null,
       shortUsed: null,
@@ -330,14 +336,28 @@ function serviceUsage(state, serviceKey) {
       lastParseFailedAt: null,
       lastParseFailureReason: null,
       stale: true,
-      source: null
+      source: null,
+      consecutiveFailures: source && source.consecutiveFailures || null,
+      lastFreshReadAt: source && source.lastFreshReadAt || null,
+      lastAttemptAt: source && source.lastAttemptAt || null,
+      lastError: source && source.lastError || null,
+      lastRecoveryAction: source && source.lastRecoveryAction || null,
+      lastReloadAt: source && source.lastReloadAt || null,
+      reloadCooldownRemainingMs: source ? cooldownRemainingMs(source, new Date(), DEFAULT_RELOAD_POLICY) : null,
+      targetFound: Boolean(source && source.target)
     };
   }
 
   const failures = Number(service.consecutiveParseFailures || 0);
   const lastSuccessfulCheckedAt = service.lastSuccessfulCheckedAt || (failures > 0 ? null : service.lastCheckedAt || null);
+  const sourceFailures = Number(source && source.consecutiveFailures || failures || 0);
+  const freshness = source && source.freshness || (failures > 0 || !lastSuccessfulCheckedAt ? "stale" : "fresh");
 
   return {
+    sourceKey: serviceKey,
+    backend: source && source.backend || "cdp",
+    status: source && source.status || (failures > 0 ? "stale" : "healthy"),
+    freshness,
     shortRemaining: service.remainingShortWindowPercent,
     weeklyRemaining: service.remainingWeeklyPercent,
     shortUsed: service.usedShortWindowPercent,
@@ -354,8 +374,16 @@ function serviceUsage(state, serviceKey) {
     lastSuccessfulCheckedAt,
     lastParseFailedAt: service.lastParseFailedAt || service.lastParseFailureAt || null,
     lastParseFailureReason: service.lastParseFailureReason || null,
-    stale: failures > 0 || !lastSuccessfulCheckedAt,
-    source: service.source || null
+    stale: freshness !== "fresh" || sourceFailures > 0 || !lastSuccessfulCheckedAt,
+    source: service.source || null,
+    consecutiveFailures: sourceFailures,
+    lastFreshReadAt: source && source.lastFreshReadAt || lastSuccessfulCheckedAt,
+    lastAttemptAt: source && source.lastAttemptAt || service.lastAttemptedAt || service.lastCheckedAt || null,
+    lastError: source && source.lastError || service.lastParseFailureReason || null,
+    lastRecoveryAction: source && source.lastRecoveryAction || null,
+    lastReloadAt: source && source.lastReloadAt || null,
+    reloadCooldownRemainingMs: source ? cooldownRemainingMs(source, new Date(), DEFAULT_RELOAD_POLICY) : null,
+    targetFound: Boolean(source && source.target)
   };
 }
 
@@ -379,14 +407,17 @@ function missingUsagePage(state, latestSummary, serviceKey) {
 function parserFailuresExist(state) {
   return ["codex", "claude"].some((serviceKey) => {
     const service = state && state.services && state.services[serviceKey];
-    return service && Number(service.consecutiveParseFailures || 0) > 0;
+    const source = state && state.sources && state.sources[serviceKey];
+    return (service && Number(service.consecutiveParseFailures || 0) > 0) || (source && Number(source.consecutiveFailures || 0) > 0);
   });
 }
 
 function highRecentFailures(state) {
   return ["codex", "claude"].some((serviceKey) => {
     const service = state && state.services && state.services[serviceKey];
-    return service && Number(service.consecutiveParseFailures || 0) >= 3;
+    const source = state && state.sources && state.sources[serviceKey];
+    const threshold = DEFAULT_RELOAD_POLICY.thresholds[serviceKey] || 3;
+    return (service && Number(service.consecutiveParseFailures || 0) >= threshold) || (source && Number(source.consecutiveFailures || 0) >= threshold);
   });
 }
 
@@ -451,7 +482,7 @@ async function buildStatus() {
   const config = loadConfig();
   const policyResult = loadPolicy({ strictJson: false });
   const policy = summarizePolicy(policyResult.policy);
-  const statePath = path.resolve(PROJECT_ROOT, config.stateFilePath);
+  const statePath = config.stateFilePath;
   const stateFound = exists(statePath);
   const state = stateFound ? readJson(statePath) : null;
   const outLines = readTail(OUT_LOG_PATH).split(/\r?\n/).filter(Boolean);

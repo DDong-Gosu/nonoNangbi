@@ -388,7 +388,8 @@ async function extractUsagePage(context, service, options = {}) {
     reuseExistingPages: options.reuseExistingPages !== false,
     openMissingPages: options.openMissingPages !== false,
     allowFocusSteal: options.allowFocusSteal === true,
-    reloadExistingPages: options.reloadExistingPages !== false
+    reloadExistingPages: options.reloadExistingPages !== false,
+    postReloadWaitMs: Number(options.postReloadWaitMs || 0)
   };
   let page = null;
   let shouldClosePage = false;
@@ -448,6 +449,10 @@ async function extractUsagePage(context, service, options = {}) {
         timeout: NAVIGATION_TIMEOUT_MS
       });
       reloadedExistingPage = true;
+
+      if (settings.postReloadWaitMs > 0) {
+        await page.waitForTimeout(settings.postReloadWaitMs).catch(() => {});
+      }
     }
 
     try {

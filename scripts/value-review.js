@@ -277,7 +277,7 @@ function buildReview() {
   const config = loadConfig();
   const policyResult = loadPolicy({ strictJson: false });
   const policy = summarizePolicy(policyResult.policy);
-  const statePath = path.resolve(PROJECT_ROOT, config.stateFilePath);
+  const statePath = config.stateFilePath;
   const state = readJson(statePath);
   const outLines = readTail(OUT_LOG_PATH).split(/\r?\n/).filter(Boolean);
   const errorLines = readTail(ERROR_LOG_PATH).split(/\r?\n/).filter(Boolean);

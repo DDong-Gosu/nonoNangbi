@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import MongiCore
 import SwiftUI
 
@@ -21,14 +22,42 @@ final class MongiAppViewModel: ObservableObject {
         uniqueKeysWithValues: CommandKind.allCases.map { ($0, CommandRecord()) }
     )
     @Published var selectedOutput: CommandOutput?
+    @Published var loginItemState: LoginItemState = .unknown
+    @Published var loginItemMessage: String?
+    @Published var monitorRuntime: MonitorRuntimeStatus = MonitorStatusEvaluator.evaluate()
 
     private var backgroundRefreshTask: Task<Void, Never>?
     private var refreshInFlight = false
+    private var monitorCancellable: AnyCancellable?
+    let monitorRunner: MonitorRunner
 
-    init() {
+    init(monitorRunner: MonitorRunner = .shared) {
+        self.monitorRunner = monitorRunner
         let savedCadence = UserDefaults.standard.string(forKey: Self.refreshCadenceDefaultsKey)
         refreshCadence = RefreshCadence.validated(rawValue: savedCadence)
+        monitorCancellable = monitorRunner.objectWillChange.sink { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.objectWillChange.send()
+            }
+        }
+        monitorRunner.start(preferredDevRoot: projectRoot)
+        refreshMonitorRuntime()
+        refreshLoginItemState()
         restartBackgroundRefresh()
+    }
+
+    func refreshMonitorRuntime() {
+        monitorRuntime = MonitorStatusEvaluator.evaluate()
+    }
+
+    func refreshLoginItemState() {
+        loginItemState = LoginItemService.currentState()
+    }
+
+    func setLoginItemEnabled(_ enabled: Bool) {
+        let error = enabled ? LoginItemService.enable() : LoginItemService.disable()
+        loginItemMessage = error
+        refreshLoginItemState()
     }
 
     var projectRootExists: Bool {
@@ -44,6 +73,43 @@ final class MongiAppViewModel: ObservableObject {
             if case .running = record.status { return true }
             return false
         }
+    }
+
+    var monitorStatusText: String {
+        switch monitorRuntime.effective {
+        case .running:
+            return "실행 중"
+        case .starting:
+            return "시작 중"
+        case .stopped:
+            return "정지"
+        case .stale:
+            return "응답 없음 (heartbeat 멈춤)"
+        case .crashed:
+            return "비정상 종료"
+        case .failed:
+            return "실패"
+        case .unknown:
+            return fallbackMonitorStatusText
+        }
+    }
+
+    private var fallbackMonitorStatusText: String {
+        switch monitorRunner.status {
+        case .idle: return "대기"
+        case .starting: return "시작 중"
+        case .running: return "실행 중"
+        case .stopped: return "정지"
+        case .failed: return "실패"
+        }
+    }
+
+    var monitorIsHealthy: Bool {
+        monitorRuntime.effective == .running
+    }
+
+    var monitorIsRunning: Bool {
+        monitorRuntime.effective == .running || monitorRunner.status == .running || monitorRunner.isRunning
     }
 
     func refreshStatus(showOutput: Bool = false) async {
@@ -64,6 +130,33 @@ final class MongiAppViewModel: ObservableObject {
         if result.status != nil {
             lastRefreshedAt = now
             setCommand(.refresh, status: .success, exitCode: result.command.exitCode, ranAt: now, summary: "상태를 새로고침했습니다.")
+        } else {
+            setCommand(.refresh, status: .failed, exitCode: result.command.exitCode, ranAt: now, summary: result.errorMessage)
+        }
+
+        if showOutput || result.status == nil {
+            selectedOutput = makeOutput(kind: .refresh, result: result.command, ranAt: now, fallback: result.errorMessage)
+        }
+    }
+
+    func loadStatus(showOutput: Bool = false) async {
+        guard !refreshInFlight, !isRunningCommand else { return }
+        guard validateProjectRoot(for: .refresh) else { return }
+
+        refreshInFlight = true
+        defer { refreshInFlight = false }
+
+        setCommand(.refresh, status: .running, summary: "저장된 상태를 읽는 중")
+        let service = MongiStatusService(projectRoot: projectRoot)
+        let result = await service.loadStatus()
+        let now = Date()
+
+        status = result.status ?? status
+        errorMessage = result.errorMessage
+
+        if result.status != nil {
+            lastRefreshedAt = now
+            setCommand(.refresh, status: .success, exitCode: result.command.exitCode, ranAt: now, summary: "상태를 읽었습니다.")
         } else {
             setCommand(.refresh, status: .failed, exitCode: result.command.exitCode, ranAt: now, summary: result.errorMessage)
         }
@@ -130,6 +223,11 @@ final class MongiAppViewModel: ObservableObject {
         Task { await refreshStatus(showOutput: false) }
     }
 
+    func restartMonitor() {
+        monitorRunner.restart(preferredDevRoot: projectRoot)
+        refreshMonitorRuntime()
+    }
+
     func clearOutput() {
         selectedOutput = nil
     }
@@ -177,6 +275,10 @@ final class MongiAppViewModel: ObservableObject {
     }
 
     private func validateProjectRoot(for kind: CommandKind) -> Bool {
+        if MonitorBundleResolver.resolve(preferredDevRoot: projectRoot) != nil {
+            return true
+        }
+
         if projectRootExists && projectRootLooksValid { return true }
 
         let message = projectRootExists

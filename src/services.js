@@ -1,5 +1,6 @@
 const { parseCodexUsage } = require("./parsers/codexParser");
 const { parseClaudeUsage } = require("./parsers/claudeParser");
+const { createCdpBackend } = require("./backends/cdpBackend");
 
 function createServices(config) {
   return [
@@ -7,13 +8,15 @@ function createServices(config) {
       key: "codex",
       name: "Codex",
       usageUrl: config.codexUsageUrl,
-      parser: parseCodexUsage
+      parser: parseCodexUsage,
+      createBackend: createCdpBackend
     },
     {
       key: "claude",
       name: "Claude",
       usageUrl: config.claudeUsageUrl,
-      parser: parseClaudeUsage
+      parser: parseClaudeUsage,
+      createBackend: createCdpBackend
     }
   ];
 }

@@ -4,6 +4,7 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 PACKAGE_PATH="$PROJECT_ROOT/macos/Mongi"
 DIST_ROOT="${MONGI_DIST_DIR:-$PROJECT_ROOT/dist}"
+MONITOR_DIST="$DIST_ROOT/monitor"
 APP_NAME="Mongi"
 CONFIGURATION="${MONGI_CONFIGURATION:-release}"
 
@@ -45,6 +46,7 @@ require_tool() {
 
 require_tool swift
 require_tool plutil
+require_tool rsync
 
 CONFIG_LOWER="$(printf "%s" "$CONFIGURATION" | tr "[:upper:]" "[:lower:]")"
 
@@ -73,6 +75,8 @@ INFO_PLIST="$CONTENTS_PATH/Info.plist"
 echo "Building Mongi $CONFIG_DIR app..."
 echo "Package path: $PACKAGE_PATH"
 
+"$PROJECT_ROOT/scripts/build-monitor-dist.sh"
+
 swift build --package-path "$PACKAGE_PATH" -c "$SWIFT_CONFIGURATION"
 BIN_PATH="$(swift build --package-path "$PACKAGE_PATH" -c "$SWIFT_CONFIGURATION" --show-bin-path)"
 EXECUTABLE="$BIN_PATH/$APP_NAME"
@@ -82,10 +86,21 @@ if [ ! -x "$EXECUTABLE" ]; then
   exit 1
 fi
 
+SHORT_VERSION="${MONGI_APP_VERSION:-}"
+if [ -z "$SHORT_VERSION" ] && command -v node >/dev/null 2>&1; then
+  SHORT_VERSION="$(node -p "require('$PROJECT_ROOT/package.json').version" 2>/dev/null || true)"
+fi
+if [ -z "$SHORT_VERSION" ]; then
+  SHORT_VERSION="3.0.0-rc.1"
+fi
+BUILD_VERSION="${MONGI_APP_BUILD:-$(date -u '+%Y%m%d%H%M')}"
+echo "App version: $SHORT_VERSION ($BUILD_VERSION)"
+
 rm -rf "$APP_PATH"
 mkdir -p "$MACOS_PATH" "$RESOURCES_PATH"
 cp "$EXECUTABLE" "$MACOS_PATH/$APP_NAME"
 chmod 755 "$MACOS_PATH/$APP_NAME"
+rsync -a --delete "$MONITOR_DIST/" "$RESOURCES_PATH/monitor/"
 
 cat > "$INFO_PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -107,9 +122,9 @@ cat > "$INFO_PLIST" <<PLIST
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.1.0</string>
+  <string>$SHORT_VERSION</string>
   <key>CFBundleVersion</key>
-  <string>1</string>
+  <string>$BUILD_VERSION</string>
   <key>LSMinimumSystemVersion</key>
   <string>14.0</string>
   <key>LSUIElement</key>

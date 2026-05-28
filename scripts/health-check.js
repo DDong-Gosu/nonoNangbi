@@ -4,6 +4,8 @@ const { execFileSync } = require("child_process");
 
 const { loadConfig } = require("../src/config");
 const { getGitOutputStatus } = require("../src/output/gitOutputStatus");
+const { healthLogPath, ensureRuntimeDirs } = require("../src/runtime/paths");
+const { DEFAULT_RELOAD_POLICY, cooldownRemainingMs } = require("../src/backends/cdpBackend");
 
 const LABEL = "com.donghoon.mongi-usage-coach";
 const LOG_SIZE_WARNING_BYTES = 5 * 1024 * 1024;
@@ -93,6 +95,53 @@ async function cdpReachable(cdpUrl) {
   }
 }
 
+async function cdpTargetList(cdpUrl) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 3000);
+  const listUrl = `${cdpUrl.replace(/\/$/, "")}/json/list`;
+
+  try {
+    const response = await fetch(listUrl, { signal: controller.signal });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const list = await response.json();
+    return Array.isArray(list) ? list : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function targetMatches(serviceKey, target) {
+  const rawUrl = target && target.url ? String(target.url) : "";
+
+  try {
+    const url = new URL(rawUrl);
+    const host = url.hostname.toLowerCase();
+    const location = `${url.pathname}${url.search}${url.hash}`.toLowerCase();
+
+    if (serviceKey === "codex") {
+      return host.includes("chatgpt.com") && (
+        location.includes("analytics") ||
+        location.includes("usage") ||
+        (location.includes("codex") && location.includes("settings"))
+      );
+    }
+
+    if (serviceKey === "claude") {
+      return host.includes("claude.ai") && location.includes("settings") && location.includes("usage");
+    }
+  } catch {
+    return false;
+  }
+
+  return false;
+}
+
 function quietHoursActive(quietHours, now = new Date()) {
   if (!quietHours || !quietHours.enabled) {
     return false;
@@ -115,9 +164,18 @@ function quietHoursActive(quietHours, now = new Date()) {
 
 function readState(stateFilePath) {
   try {
-    return JSON.parse(fs.readFileSync(path.resolve(PROJECT_ROOT, stateFilePath), "utf8"));
+    return JSON.parse(fs.readFileSync(stateFilePath, "utf8"));
   } catch {
     return null;
+  }
+}
+
+function writeHealthLog(line) {
+  try {
+    ensureRuntimeDirs();
+    fs.appendFileSync(healthLogPath, `[${new Date().toISOString()}] ${line}\n`);
+  } catch (error) {
+    process.stderr.write(`[health] failed to write health log: ${error.message}\n`);
   }
 }
 
@@ -137,7 +195,7 @@ function summarizeRecentLogs() {
   };
 }
 
-function printService(name, service) {
+function printService(name, service, source) {
   if (!service) {
     console.log(`- ${name}: missing`);
     console.log("  Next: Run npm run monitor");
@@ -146,14 +204,21 @@ function printService(name, service) {
 
   const successAt = service.lastSuccessfulCheckedAt || (Number(service.consecutiveParseFailures || 0) > 0 ? null : service.lastCheckedAt);
   const attemptedAt = service.lastAttemptedAt || service.lastCheckedAt;
+  const sourceFailures = Number(source && source.consecutiveFailures || service.consecutiveParseFailures || 0);
+  const reloadCooldown = source ? cooldownRemainingMs(source, new Date(), DEFAULT_RELOAD_POLICY) : null;
 
-  console.log(`- ${name}: short remaining ${formatValue(service.remainingShortWindowPercent)}, weekly remaining ${formatValue(service.remainingWeeklyPercent)}, short used ${formatValue(service.usedShortWindowPercent)}, weekly used ${formatValue(service.usedWeeklyPercent)}, failures ${Number(service.consecutiveParseFailures || 0)}, checked ${formatValue(successAt)}, attempted ${formatValue(attemptedAt)}`);
+  console.log(`- ${name}: backend ${formatValue(source && source.backend || "cdp")}, status ${formatValue(source && source.status)}, freshness ${formatValue(source && source.freshness)}, short remaining ${formatValue(service.remainingShortWindowPercent)}, weekly remaining ${formatValue(service.remainingWeeklyPercent)}, failures ${sourceFailures}, checked ${formatValue(source && source.lastFreshReadAt || successAt)}, attempted ${formatValue(source && source.lastAttemptAt || attemptedAt)}`);
+  console.log(`  Recovery: last action ${formatValue(source && source.lastRecoveryAction)}, last reload ${formatValue(source && source.lastReloadAt)}, reload cooldown ${reloadCooldown === null ? "unknown" : `${reloadCooldown}ms`}`);
 
-  if (service.source && service.source.selectedTab) {
-    console.log(`  Source: ${formatValue(service.source.selectedTab.title)} / ${formatValue(service.source.selectedTab.url)} / target ${formatValue(service.source.selectedTab.targetId)}`);
+  if (source && source.target) {
+    console.log(`  Target: found / ${formatValue(source.target.title)} / ${formatValue(source.target.url)}`);
+  } else if (service.source && service.source.selectedTab) {
+    console.log(`  Target: found / ${formatValue(service.source.selectedTab.title)} / ${formatValue(service.source.selectedTab.url)}`);
+  } else {
+    console.log("  Target: unknown");
   }
 
-  if (Number(service.consecutiveParseFailures || 0) > 0) {
+  if (sourceFailures > 0) {
     if (service.lastParseFailureReason === "usage_page_not_open") {
       console.log("  Next: Open Mongi Start.app, double-click Mongi Start.command, or run npm run start:chrome. Then confirm the usage page is visible.");
     } else {
@@ -174,10 +239,13 @@ function serviceHasMissingUsagePage(serviceKey, state, recentLogs) {
 
 async function main() {
   const config = loadConfig();
-  const statePath = path.resolve(PROJECT_ROOT, config.stateFilePath);
+  const statePath = config.stateFilePath;
   const stateExists = exists(statePath);
-  const state = stateExists ? readState(config.stateFilePath) : null;
+  const state = stateExists ? readState(statePath) : null;
   const cdpOk = await cdpReachable(config.chromeCdpUrl);
+  const targets = cdpOk ? await cdpTargetList(config.chromeCdpUrl) : null;
+  const codexTargetFound = Array.isArray(targets) && targets.some((target) => targetMatches("codex", target));
+  const claudeTargetFound = Array.isArray(targets) && targets.some((target) => targetMatches("claude", target));
   const loaded = launchdLoaded();
   const recentLogs = summarizeRecentLogs();
   const quietActive = quietHoursActive(config.quietHours);
@@ -238,6 +306,9 @@ async function main() {
   console.log(`- Browser mode: ${config.browserConnectionMode}`);
   console.log(`- CDP URL: ${config.chromeCdpUrl}`);
   console.log(`- CDP reachable: ${cdpOk ? "yes" : "no"}`);
+  console.log(`- CDP target list: ${Array.isArray(targets) ? "reachable" : "unreachable"}`);
+  console.log(`- Codex target found: ${codexTargetFound ? "yes" : "no"}`);
+  console.log(`- Claude target found: ${claudeTargetFound ? "yes" : "no"}`);
   console.log("");
   console.log("Launchd:");
   console.log(`- plist: ${exists(PLIST_PATH) ? "installed" : "missing"}`);
@@ -249,9 +320,10 @@ async function main() {
   console.log(`- last exit code: ${formatValue(recentLogs.lastExitCode)}`);
   console.log("");
   console.log("Usage:");
+  console.log(`- state path: ${statePath}`);
   console.log(`- state: ${stateExists ? "found" : "missing"}`);
-  printService("Codex", state && state.services && state.services.codex);
-  printService("Claude", state && state.services && state.services.claude);
+  printService("Codex", state && state.services && state.services.codex, state && state.sources && state.sources.codex);
+  printService("Claude", state && state.services && state.services.claude, state && state.sources && state.sources.claude);
   console.log("");
   console.log("Notifications:");
   console.log(`- quiet hours active: ${quietActive ? "yes" : "no"}`);
@@ -284,6 +356,10 @@ async function main() {
       console.log(`- ${action}`);
     }
   }
+
+  writeHealthLog(
+    `state=${stateExists ? "found" : "missing"} cdp=${cdpOk ? "yes" : "no"} codexTarget=${codexTargetFound ? "yes" : "no"} claudeTarget=${claudeTargetFound ? "yes" : "no"} output=${output.outputStatus} nextActions=${nextActions.length}`
+  );
 }
 
 main().catch((error) => {

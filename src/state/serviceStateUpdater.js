@@ -1,12 +1,105 @@
 const { nowIso } = require("../utils/time");
+const { BACKEND_IDS, FRESHNESS, SOURCE_STATUSES } = require("../backends/usageBackend");
 
-function updateServiceState(state, parseResult) {
+function ensureSourceState(state, serviceKey) {
+  state.sources = state.sources || {};
+
+  if (!state.sources[serviceKey]) {
+    state.sources[serviceKey] = {
+      source: serviceKey,
+      backend: BACKEND_IDS.CDP,
+      status: SOURCE_STATUSES.MISSING,
+      freshness: FRESHNESS.UNKNOWN,
+      usage: null,
+      lastFreshReadAt: null,
+      lastAttemptAt: null,
+      consecutiveFailures: 0,
+      lastError: null,
+      lastRecoveryAction: null,
+      lastReloadAt: null,
+      target: null
+    };
+  }
+
+  return state.sources[serviceKey];
+}
+
+function usageFromParseResult(parseResult) {
+  return {
+    shortWindowPercent: parseResult.shortWindowPercent,
+    weeklyPercent: parseResult.weeklyPercent,
+    rawShortWindowPercent: parseResult.rawShortWindowPercent,
+    rawWeeklyPercent: parseResult.rawWeeklyPercent,
+    rawShortWindowMeaning: parseResult.rawShortWindowMeaning || "unknown",
+    rawWeeklyPercentMeaning: parseResult.rawWeeklyPercentMeaning || "unknown",
+    remainingShortWindowPercent: parseResult.remainingShortWindowPercent,
+    remainingWeeklyPercent: parseResult.remainingWeeklyPercent,
+    usedShortWindowPercent: parseResult.usedShortWindowPercent,
+    usedWeeklyPercent: parseResult.usedWeeklyPercent,
+    shortWindowLabel: parseResult.shortWindowLabel || null,
+    weeklyWindowLabel: parseResult.weeklyWindowLabel || null,
+    parseMethod: parseResult.parseMethod,
+    parseConfidence: parseResult.parseConfidence
+  };
+}
+
+function targetFromParseResult(parseResult, backendResult) {
+  if (backendResult && backendResult.target !== undefined) {
+    return backendResult.target;
+  }
+
+  const selectedTab = parseResult && parseResult.source && parseResult.source.selectedTab;
+
+  if (!selectedTab) {
+    return null;
+  }
+
+  return {
+    targetId: selectedTab.targetId || null,
+    url: selectedTab.url || "",
+    title: selectedTab.title || "",
+    matchType: selectedTab.matchType || null
+  };
+}
+
+function updateSourceState(state, parseResult, backendResult, checkedAt) {
+  const source = ensureSourceState(state, parseResult.serviceKey);
+  const target = targetFromParseResult(parseResult, backendResult);
+
+  source.backend = (backendResult && backendResult.backend) || source.backend || BACKEND_IDS.CDP;
+  source.lastAttemptAt = checkedAt;
+  source.lastRecoveryAction = backendResult && backendResult.lastRecoveryAction !== undefined ? backendResult.lastRecoveryAction : source.lastRecoveryAction || null;
+  source.lastReloadAt = backendResult && backendResult.lastReloadAt ? backendResult.lastReloadAt : source.lastReloadAt || null;
+
+  if (target !== null || (backendResult && backendResult.target === null)) {
+    source.target = target;
+  }
+
+  if (parseResult.ok) {
+    source.status = (backendResult && backendResult.status) || SOURCE_STATUSES.HEALTHY;
+    source.freshness = (backendResult && backendResult.freshness) || FRESHNESS.FRESH;
+    source.usage = usageFromParseResult(parseResult);
+    source.lastFreshReadAt = checkedAt;
+    source.consecutiveFailures = 0;
+    source.lastError = null;
+    return;
+  }
+
+  source.status = (backendResult && backendResult.status) || (source.usage ? SOURCE_STATUSES.STALE : SOURCE_STATUSES.FAILED);
+  source.freshness = (backendResult && backendResult.freshness) || (source.usage ? FRESHNESS.STALE : FRESHNESS.UNKNOWN);
+  source.consecutiveFailures = Number(source.consecutiveFailures || 0) + 1;
+  source.lastError = (backendResult && backendResult.lastError) || parseResult.errorReason || "read_failed";
+}
+
+function updateServiceState(state, parseResult, backendResult = null) {
   const current = state.services[parseResult.serviceKey];
   const checkedAt = nowIso();
 
   if (!current) {
     return;
   }
+
+  updateSourceState(state, parseResult, backendResult, checkedAt);
 
   if (parseResult.ok) {
     current.lastAttemptedAt = checkedAt;

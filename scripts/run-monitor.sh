@@ -8,6 +8,10 @@ mkdir -p logs
 
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
+# Tag runtime.json/monitor.lock so readers can tell launchd-driven single-shot
+# runs apart from the macOS app's long-lived loop monitor.
+export MONGI_MONITOR_OWNER="${MONGI_MONITOR_OWNER:-launchd}"
+
 echo "[$(date '+%Y-%m-%d %H:%M:%S %z')] Mongi monitor wrapper started."
 echo "Project root: $PROJECT_ROOT"
 

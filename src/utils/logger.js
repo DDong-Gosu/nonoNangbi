@@ -1,9 +1,39 @@
+const fs = require("fs");
+
+const { monitorLogPath, errorLogPath, ensureRuntimeDirs } = require("../runtime/paths");
+
 const LEVELS = {
   error: 0,
   warn: 1,
   info: 2,
   debug: 3
 };
+
+let fileLoggingDisabled = false;
+
+// Mirror console output into the standard log files. Failures must never crash
+// the app: fall back to stderr and stop retrying file writes.
+function writeToFile(level, line) {
+  if (process.env.MONGI_DISABLE_FILE_LOGGER === "true") {
+    return;
+  }
+
+  if (fileLoggingDisabled) {
+    return;
+  }
+
+  try {
+    ensureRuntimeDirs();
+    fs.appendFileSync(monitorLogPath, `${line}\n`);
+
+    if (level === "error") {
+      fs.appendFileSync(errorLogPath, `${line}\n`);
+    }
+  } catch (error) {
+    fileLoggingDisabled = true;
+    process.stderr.write(`[logger] file logging disabled: ${error.message}\n`);
+  }
+}
 
 function getConfiguredLevel() {
   const rawLevel = process.env.LOG_LEVEL || "info";
@@ -68,6 +98,8 @@ function log(level, message, metadata) {
 
   const timestamp = new Date().toISOString();
   const line = `[${timestamp}] [${level.toUpperCase()}] ${message}${formatMetadata(metadata)}`;
+
+  writeToFile(level, line);
 
   if (level === "error") {
     console.error(line);

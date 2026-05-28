@@ -57,6 +57,10 @@ struct MongiStatus: Codable, Sendable {
     }
 
     struct ServiceUsage: Codable, Sendable {
+        var sourceKey: String?
+        var backend: String?
+        var status: String?
+        var freshness: String?
         var shortRemaining: Int?
         var weeklyRemaining: Int?
         var shortUsed: Int?
@@ -74,6 +78,14 @@ struct MongiStatus: Codable, Sendable {
         var lastParseFailedAt: String?
         var lastParseFailureReason: String?
         var stale: Bool?
+        var consecutiveFailures: Int?
+        var lastFreshReadAt: String?
+        var lastAttemptAt: String?
+        var lastError: String?
+        var lastRecoveryAction: String?
+        var lastReloadAt: String?
+        var reloadCooldownRemainingMs: Int?
+        var targetFound: Bool?
     }
 
     struct Today: Codable, Sendable {

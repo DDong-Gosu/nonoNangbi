@@ -118,7 +118,11 @@ struct ShellRunner: Sendable {
     static func shellCommand(_ command: String, workingDirectory: String) -> String {
         let pathPrefix = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
         let quotedDirectory = singleQuote(workingDirectory)
-        return "export PATH=\(singleQuote(pathPrefix)):$PATH; cd \(quotedDirectory); \(command)"
+        let projectRoot = ProjectRootStore.current
+        let outputCwd = ProjectRootStore.exists(projectRoot) && ProjectRootStore.looksLikeMongiProject(projectRoot)
+            ? " export MONGI_OUTPUT_CWD=\(singleQuote(projectRoot));"
+            : ""
+        return "export PATH=\(singleQuote(pathPrefix)):$PATH;\(outputCwd) cd \(quotedDirectory); \(command)"
     }
 
     static func npmCommand(_ script: String) -> String {

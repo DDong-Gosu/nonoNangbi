@@ -143,6 +143,7 @@ struct MenuBarStatusView: View {
                 .foregroundStyle(.secondary)
             Spacer()
             indicator(label: "CDP", value: viewModel.status?.health?.cdpReachable)
+            indicator(label: "monitor", value: viewModel.monitorIsRunning)
             indicator(label: "launchd", value: viewModel.status?.health?.launchdLoaded)
             if viewModel.status?.health?.quietHoursActive == true {
                 Text("조용한 시간")
@@ -208,7 +209,7 @@ struct MenuBarStatusView: View {
     }
 
     private func refreshOnPopoverOpen() {
-        Task { await viewModel.refreshStatus(showOutput: false) }
+        Task { await viewModel.loadStatus(showOutput: false) }
     }
 
     // MARK: - Helpers

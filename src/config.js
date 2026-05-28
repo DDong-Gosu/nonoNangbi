@@ -1,4 +1,7 @@
+const path = require("path");
 const dotenv = require("dotenv");
+
+const paths = require("./runtime/paths");
 
 dotenv.config({ quiet: true });
 
@@ -13,7 +16,7 @@ const DEFAULTS = {
   quietHoursEnd: 8,
   headless: true,
   logLevel: "info",
-  stateFilePath: "data/state.json",
+  stateFilePath: paths.statePath,
   browserConnectionMode: "cdp",
   chromeCdpUrl: "http://127.0.0.1:9222",
   chromeUserDataDir: "$HOME/.mongi-chrome-profile"
@@ -55,6 +58,23 @@ function readBoolean(value, fallback) {
   return fallback;
 }
 
+// State always lives under the macOS standard app-support dir. An empty or
+// relative STATE_FILE_PATH (including the legacy "data/state.json") is migrated
+// into appSupportDir so runtime state never depends on process.cwd().
+function resolveStatePath(value) {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+
+  if (trimmed.length === 0) {
+    return paths.statePath;
+  }
+
+  if (path.isAbsolute(trimmed)) {
+    return trimmed;
+  }
+
+  return path.join(paths.appSupportDir, path.basename(trimmed));
+}
+
 function readBrowserConnectionMode(value) {
   const mode = readString(value, DEFAULTS.browserConnectionMode).toLowerCase();
 
@@ -80,7 +100,7 @@ function loadConfig() {
     },
     headless: readBoolean(process.env.HEADLESS, DEFAULTS.headless),
     logLevel: readString(process.env.LOG_LEVEL, DEFAULTS.logLevel),
-    stateFilePath: readString(process.env.STATE_FILE_PATH, DEFAULTS.stateFilePath),
+    stateFilePath: resolveStatePath(process.env.STATE_FILE_PATH),
     browserConnectionMode: readBrowserConnectionMode(process.env.BROWSER_CONNECTION_MODE),
     chromeCdpUrl: readString(process.env.CHROME_CDP_URL, DEFAULTS.chromeCdpUrl),
     chromeUserDataDir: readString(process.env.CHROME_USER_DATA_DIR, DEFAULTS.chromeUserDataDir),

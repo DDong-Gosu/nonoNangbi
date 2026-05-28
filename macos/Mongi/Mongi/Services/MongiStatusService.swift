@@ -10,7 +10,8 @@ struct MongiStatusService: Sendable {
     let projectRoot: String
 
     private var runner: ShellRunner {
-        ShellRunner(workingDirectory: projectRoot)
+        let location = MonitorBundleResolver.resolve(preferredDevRoot: projectRoot)
+        return ShellRunner(workingDirectory: location?.rootDirectory.path ?? projectRoot)
     }
 
     func refreshAndLoadStatus() async -> StatusLoadResult {

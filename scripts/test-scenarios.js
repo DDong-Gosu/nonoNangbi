@@ -9,6 +9,17 @@ const { getEventMessage, getOutputStatusMessage, getStartMessage, lineCount } = 
 const { OUTPUT_STATUSES, classifyOutputStatus, getGitOutputStatus, getOutputStatusDisplay } = require("../src/output/gitOutputStatus");
 const { parseClaudeUsage } = require("../src/parsers/claudeParser");
 const { parseCodexUsage } = require("../src/parsers/codexParser");
+const { createCdpBackend } = require("../src/backends/cdpBackend");
+const { FRESHNESS, SOURCE_STATUSES } = require("../src/backends/usageBackend");
+const { completeCommands, pendingCommands, readCommandStore, writeCommandStore } = require("../src/runtime/commandStore");
+const { acquireLock, releaseLock, readLock, refreshLock } = require("../src/runtime/monitorLock");
+const {
+  recordMonitorRunning,
+  recordMonitorHeartbeat,
+  recordMonitorStopped,
+  computeMonitorStatus,
+  readRuntimeMeta
+} = require("../src/runtime/runtimeMeta");
 const { createDefaultState } = require("../src/state/stateStore");
 const { updateServiceState } = require("../src/state/serviceStateUpdater");
 const { selectUsagePageCandidate, serviceUsagePageMatches } = require("../src/extractors/usageExtractor");
@@ -102,6 +113,56 @@ function makeServiceState(overrides = {}) {
     consecutiveParseFailures: 0,
     lastParseFailureDigestAt: null,
     ...overrides
+  };
+}
+
+function makeReadResult(serviceKey, ok, overrides = {}) {
+  const serviceName = serviceKey === "claude" ? "Claude" : "Codex";
+  const source = overrides.source || {
+    selected: true,
+    selectedTab: {
+      targetId: `${serviceKey}-target`,
+      url: serviceKey === "claude" ? "https://claude.ai/settings/usage" : "https://chatgpt.com/codex/cloud/settings/analytics#usage",
+      title: serviceName,
+      matchType: "provider_url_pattern"
+    }
+  };
+
+  return {
+    extraction: {
+      serviceKey,
+      serviceName,
+      navigationStatus: null,
+      source,
+      error: ok ? null : { reason: overrides.errorReason || "parser_low_confidence" }
+    },
+    parseResult: {
+      serviceKey,
+      serviceName,
+      ok,
+      shortWindowPercent: ok ? 80 : null,
+      weeklyPercent: ok ? 90 : null,
+      rawShortWindowPercent: ok ? 80 : null,
+      rawWeeklyPercent: ok ? 90 : null,
+      rawShortWindowMeaning: ok ? "remaining" : "unknown",
+      rawWeeklyPercentMeaning: ok ? "remaining" : "unknown",
+      remainingShortWindowPercent: ok ? 80 : null,
+      remainingWeeklyPercent: ok ? 90 : null,
+      usedShortWindowPercent: ok ? 20 : null,
+      usedWeeklyPercent: ok ? 10 : null,
+      shortWindowLabel: ok ? "5-hour remaining" : null,
+      weeklyWindowLabel: ok ? "weekly remaining" : null,
+      parseMethod: ok ? "mock_success" : "mock_failure",
+      parseConfidence: ok ? "high" : "none",
+      rawTextSample: "",
+      parsedAt: "2026-05-28T01:00:00.000Z",
+      errorReason: ok ? null : overrides.errorReason || "parser_low_confidence",
+      source,
+      selectedCandidates: {
+        shortWindow: null,
+        weekly: null
+      }
+    }
   };
 }
 
@@ -721,6 +782,283 @@ async function main() {
     });
     assert(usageLine === null, "Discord usage line should omit stale provider values.");
     scenarioResults.push("Failed parse preserves values but marks provider stale");
+  }
+
+  {
+    const state = createDefaultState();
+    state.services.codex.remainingShortWindowPercent = 85;
+    state.services.codex.remainingWeeklyPercent = 51;
+    state.sources.codex.usage = {
+      remainingShortWindowPercent: 85,
+      remainingWeeklyPercent: 51,
+      usedShortWindowPercent: 15,
+      usedWeeklyPercent: 49
+    };
+    state.sources.codex.lastFreshReadAt = "2026-05-28T00:00:00.000Z";
+    updateServiceState(state, makeReadResult("codex", false).parseResult, {
+      backend: "cdp",
+      status: SOURCE_STATUSES.DEGRADED,
+      freshness: FRESHNESS.STALE,
+      lastRecoveryAction: "reload-threshold-not-met",
+      lastError: "parser_low_confidence"
+    });
+    assert(state.services.codex.remainingShortWindowPercent === 85, "Read failure should preserve last known short usage.");
+    assert(state.services.codex.remainingWeeklyPercent === 51, "Read failure should preserve last known weekly usage.");
+    assert(state.sources.codex.freshness === FRESHNESS.STALE, "Read failure should mark source freshness stale.");
+    assert(state.sources.codex.consecutiveFailures === 1, "Read failure should increment source consecutiveFailures.");
+    scenarioResults.push("V3 last known usage is preserved with stale freshness");
+  }
+
+  {
+    const service = { key: "codex", name: "Codex", parser: () => null };
+    const calls = [];
+    const reads = [
+      makeReadResult("codex", false),
+      makeReadResult("codex", false),
+      makeReadResult("codex", false),
+      makeReadResult("codex", true)
+    ];
+    const backend = createCdpBackend(service, {
+      performRead: async (options) => {
+        calls.push(options);
+        return reads.shift();
+      },
+      listUsagePageCandidates: async () => [
+        {
+          index: 0,
+          targetId: "new-codex-target",
+          url: "https://chatgpt.com/codex/cloud/settings/analytics#usage",
+          title: "Codex",
+          matchType: "provider_url_pattern",
+          score: 50
+        }
+      ],
+      logger: { info: () => {}, warn: () => {}, error: () => {} }
+    });
+    const result = await backend.readUsage({
+      context: {},
+      sourceState: { consecutiveFailures: 2, lastReloadAt: null, usage: { remainingShortWindowPercent: 85 } },
+      serviceState: makeServiceState({ remainingShortWindowPercent: 85 }),
+      now: new Date("2026-05-28T01:00:00.000Z")
+    });
+    assert(result.parseResult.ok === true, "Reload success should return a successful parse result.");
+    assert(calls.some((call) => call.reload === true), "Threshold failure should attempt reload.");
+    assert(result.backend.lastRecoveryAction === "reload-success", "Reload success should record lastRecoveryAction.");
+    assert(Boolean(result.backend.lastReloadAt), "Reload success should record lastReloadAt.");
+    scenarioResults.push("V3 Codex threshold failure attempts reload and recovers");
+  }
+
+  {
+    const service = { key: "claude", name: "Claude", parser: () => null };
+    const calls = [];
+    const reads = [
+      makeReadResult("claude", false),
+      makeReadResult("claude", false),
+      makeReadResult("claude", false)
+    ];
+    const backend = createCdpBackend(service, {
+      performRead: async (options) => {
+        calls.push(options);
+        return reads.shift();
+      },
+      listUsagePageCandidates: async () => [
+        {
+          index: 0,
+          targetId: "claude-target",
+          url: "https://claude.ai/settings/usage",
+          title: "Claude",
+          matchType: "provider_url_pattern",
+          score: 50
+        }
+      ],
+      logger: { info: () => {}, warn: () => {}, error: () => {} }
+    });
+    const result = await backend.readUsage({
+      context: {},
+      sourceState: {
+        consecutiveFailures: 1,
+        lastReloadAt: "2026-05-28T00:59:00.000Z",
+        usage: { remainingShortWindowPercent: 70 }
+      },
+      serviceState: makeServiceState({ remainingShortWindowPercent: 70 }),
+      now: new Date("2026-05-28T01:00:00.000Z")
+    });
+    assert(result.parseResult.ok === false, "Cooldown scenario should remain failed.");
+    assert(!calls.some((call) => call.reload === true), "Reload cooldown should prevent another reload.");
+    assert(result.backend.lastRecoveryAction === "reload-skipped-cooldown", "Cooldown skip should be recorded.");
+    scenarioResults.push("V3 reload cooldown prevents duplicate reload");
+  }
+
+  {
+    const service = { key: "codex", name: "Codex", parser: () => null };
+    const calls = [];
+    const rediscoveredSource = {
+      selected: true,
+      selectedTab: {
+        targetId: "rediscovered-codex-target",
+        url: "https://chatgpt.com/codex/cloud/settings/analytics#usage",
+        title: "Codex Rediscovered",
+        matchType: "provider_url_pattern"
+      }
+    };
+    const reads = [
+      makeReadResult("codex", false),
+      makeReadResult("codex", false),
+      makeReadResult("codex", true, { source: rediscoveredSource })
+    ];
+    const backend = createCdpBackend(service, {
+      performRead: async (options) => {
+        calls.push(options);
+        return reads.shift();
+      },
+      listUsagePageCandidates: async () => [
+        {
+          index: 1,
+          targetId: "rediscovered-codex-target",
+          url: "https://chatgpt.com/codex/cloud/settings/analytics#usage",
+          title: "Codex Rediscovered",
+          matchType: "provider_url_pattern",
+          score: 60
+        }
+      ],
+      logger: { info: () => {}, warn: () => {}, error: () => {} }
+    });
+    const result = await backend.readUsage({
+      context: {},
+      sourceState: { consecutiveFailures: 0, lastReloadAt: null, usage: { remainingShortWindowPercent: 85 } },
+      serviceState: makeServiceState({ remainingShortWindowPercent: 85 }),
+      now: new Date("2026-05-28T01:00:00.000Z")
+    });
+    assert(result.parseResult.ok === true, "Target rediscovery read should recover.");
+    assert(calls.some((call) => call.phase === "target-rediscovery"), "Target rediscovery should retry reading after rediscovery.");
+    assert(result.backend.lastRecoveryAction === "target-rediscovery-success", "Rediscovery success should be recorded.");
+    assert(result.backend.target.targetId === "rediscovered-codex-target", "Rediscovered target metadata should be recorded.");
+    scenarioResults.push("V3 target rediscovery reconnects and retries read");
+  }
+
+  {
+    const service = { key: "claude", name: "Claude", parser: () => null };
+    const reads = [
+      makeReadResult("claude", false, { errorReason: "usage_page_not_open", source: { selected: false, selectedTab: null } }),
+      makeReadResult("claude", false, { errorReason: "usage_page_not_open", source: { selected: false, selectedTab: null } })
+    ];
+    const backend = createCdpBackend(service, {
+      performRead: async () => reads.shift(),
+      listUsagePageCandidates: async () => [],
+      logger: { info: () => {}, warn: () => {}, error: () => {} }
+    });
+    const result = await backend.readUsage({
+      context: {},
+      sourceState: { consecutiveFailures: 1, lastReloadAt: null, usage: { remainingShortWindowPercent: 55 } },
+      serviceState: makeServiceState({ remainingShortWindowPercent: 55 }),
+      now: new Date("2026-05-28T01:00:00.000Z")
+    });
+    assert(result.parseResult.ok === false, "Missing target should not parse successfully.");
+    assert(result.backend.status === SOURCE_STATUSES.MISSING, "Missing target should mark source status missing.");
+    assert(result.backend.freshness === FRESHNESS.STALE, "Missing target with known value should keep stale freshness.");
+    scenarioResults.push("V3 missing target records missing status and preserves stale value");
+  }
+
+  {
+    const service = { key: "codex", name: "Codex", parser: () => null };
+    const calls = [];
+    const backend = createCdpBackend(service, {
+      performRead: async (options) => {
+        calls.push(options);
+        return makeReadResult("codex", true);
+      },
+      logger: { info: () => {}, warn: () => {}, error: () => {} }
+    });
+    const result = await backend.readUsage({
+      context: {},
+      sourceState: { consecutiveFailures: 0, lastReloadAt: null, usage: { remainingShortWindowPercent: 80 } },
+      serviceState: makeServiceState({ remainingShortWindowPercent: 80 }),
+      now: new Date("2026-05-28T01:00:00.000Z"),
+      forceReload: true
+    });
+    assert(result.parseResult.ok === true, "Manual reload should return a successful parse result.");
+    assert(calls[0].reload === true, "Manual reload command should force a reload read.");
+    assert(result.backend.lastRecoveryAction === "manual-reload-success", "Manual reload success should be recorded.");
+    scenarioResults.push("V3 manual reload command forces source reload");
+  }
+
+  {
+    const tempDir = makeTempDir("mongi-commands");
+    const commandsFile = path.join(tempDir, "commands.json");
+    const command = {
+      id: "cmd-test",
+      type: "reload-source",
+      source: "claude",
+      createdAt: "2026-05-28T00:00:00.000Z"
+    };
+    writeCommandStore({ version: 1, commands: [command] }, commandsFile);
+    const store = readCommandStore(commandsFile);
+    assert(pendingCommands(store).length === 1, "Command store should expose pending commands.");
+    completeCommands(["cmd-test"], { status: "processed", result: "ok" }, commandsFile);
+    const completed = readCommandStore(commandsFile);
+    assert(pendingCommands(completed).length === 0, "Processed commands should not remain pending.");
+    assert(completed.commands[0].processedAt, "Processed command should record processedAt.");
+    fs.writeFileSync(commandsFile, "{broken", "utf8");
+    const recovered = readCommandStore(commandsFile);
+    assert(recovered.commands.length === 0, "Corrupt command store should recover to an empty command list.");
+    assert(fs.readdirSync(tempDir).some((file) => file.startsWith("commands.json.corrupt.")), "Corrupt command store should be backed up.");
+    scenarioResults.push("V3 command file supports pending, processed, and corrupt recovery states");
+  }
+
+  {
+    const tempDir = makeTempDir("mongi-lock");
+    const lockFile = path.join(tempDir, "monitor.lock");
+
+    const fresh = acquireLock({ owner: "Mongi.app", mode: "loop" }, lockFile);
+    assert(fresh.acquired, "Fresh lock should be acquired.");
+    assert(readLock(lockFile).owner === "Mongi.app", "Lock should record owner.");
+
+    // A live foreign holder blocks acquisition. pid 1 (launchd) is always alive on macOS.
+    fs.writeFileSync(lockFile, JSON.stringify({ pid: 1, owner: "launchd", mode: "single", createdAt: new Date().toISOString() }));
+    const blocked = acquireLock({ owner: "Mongi.app", mode: "loop" }, lockFile);
+    assert(!blocked.acquired, "Lock held by a live process should block duplicates.");
+    assert(blocked.holder.owner === "launchd", "Blocked acquire should report the current holder.");
+
+    // A dead holder is treated as stale and replaced.
+    fs.writeFileSync(lockFile, JSON.stringify({ pid: 999999, owner: "dead", mode: "loop", createdAt: new Date().toISOString() }));
+    const replaced = acquireLock({ owner: "Mongi.app", mode: "loop" }, lockFile);
+    assert(replaced.acquired && replaced.stale, "Stale lock from a dead process should be replaced.");
+
+    const refreshed = refreshLock({ owner: "Mongi.app", mode: "loop" }, lockFile);
+    assert(refreshed.acquired && readLock(lockFile).refreshedAt, "Refresh should keep ownership and mark freshness.");
+
+    assert(releaseLock(process.pid, lockFile), "Owner should release its own lock.");
+    assert(readLock(lockFile) === null, "Released lock file should be gone.");
+    scenarioResults.push("V3 monitor lock acquires, blocks live duplicates, replaces stale, and releases");
+  }
+
+  {
+    const tempDir = makeTempDir("mongi-runtime");
+    const runtimeFile = path.join(tempDir, "runtime.json");
+
+    recordMonitorRunning({ owner: "Mongi.app", mode: "loop", entrypoint: "/x/src/monitor.js", nodePath: "/usr/bin/node" }, runtimeFile);
+    const running = computeMonitorStatus(readRuntimeMeta(runtimeFile));
+    assert(running.effective === "running", "Live pid with fresh heartbeat should compute running.");
+    assert(running.owner === "Mongi.app", "Computed status should expose owner.");
+
+    recordMonitorHeartbeat({ owner: "Mongi.app" }, runtimeFile);
+    const beat = readRuntimeMeta(runtimeFile);
+    assert(beat.monitor.lastHeartbeatAt, "Heartbeat should record lastHeartbeatAt.");
+    assert(beat.monitor.startedAt, "Heartbeat should preserve startedAt.");
+
+    const crashedMeta = readRuntimeMeta(runtimeFile);
+    crashedMeta.monitor.pid = 999999;
+    assert(computeMonitorStatus(crashedMeta).effective === "crashed", "Dead pid with running status should compute crashed.");
+
+    const staleMeta = readRuntimeMeta(runtimeFile);
+    staleMeta.monitor.lastHeartbeatAt = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    assert(computeMonitorStatus(staleMeta).effective === "stale", "Old heartbeat with live pid should compute stale.");
+
+    recordMonitorStopped({ owner: "Mongi.app" }, runtimeFile);
+    const stopped = computeMonitorStatus(readRuntimeMeta(runtimeFile));
+    assert(stopped.effective === "stopped", "Stopped monitor should compute stopped.");
+    assert(stopped.pid === null, "Stopped monitor should clear pid.");
+    scenarioResults.push("V3 runtime heartbeat tracks running, crashed, stale, and stopped states");
   }
 
   console.log(JSON.stringify({ ok: true, scenarios: scenarioResults }, null, 2));
